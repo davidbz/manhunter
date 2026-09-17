@@ -54,7 +54,6 @@ key.pem
 
 # IDEs and Editors
 .idea/
-.vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
 *.suo
@@ -66,3 +65,6 @@ key.pem
 # OS files
 .DS_Store
 Thumbs.db
+
+# Headroom
+.serena/

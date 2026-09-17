@@ -1,0 +1,22 @@
+{
+  "name": "manhunter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "bun run --cwd apps/web dev",
+    "build": "bun run --filter './apps/*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "sim": "bun run --cwd packages/sim start",
+    "verify": "bun run typecheck && bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}

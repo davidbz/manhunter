@@ -8,10 +8,21 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ## M0 — Project scaffold
 
-- [ ] **M0.1 Monorepo skeleton**
+- [x] **M0.1 Monorepo skeleton**
   deps: —
   Create Bun workspaces: `packages/core`, `packages/sim`, `apps/web`. Each app gets an empty composition root (`apps/web/src/main.tsx`, `packages/sim/src/main.ts`). Root `package.json` with scripts from AGENTS.md. `tsconfig.base.json` with strict flags; each workspace extends it.
   AC: `bun install` and `bun run typecheck` succeed on empty packages.
+  Notes:
+  - Workspaces are consumed as TypeScript source: `@manhunter/core` has no build step, its `exports` points straight at `src/index.ts`. Vite (M0.4) and Bun (`sim`) both compile it. Nothing downstream should add a `dist/` for `core`.
+  - `tsconfig.base.json` goes beyond the AGENTS.md flags: `verbatimModuleSyntax`, `erasableSyntaxOnly`, `noImplicitReturns`, `noPropertyAccessFromIndexSignature`, `noUncheckedSideEffectImports`, `allowUnreachableCode: false`, `allowUnusedLabels: false`. Consequences: `import type` is mandatory; enums/namespaces/parameter properties are compile errors (which enforces the no-classes rule); index-signature reads need bracket access.
+  - `isolatedDeclarations` is deliberately **not** set: it is inert under `noEmit` (verified - an exported arrow function with no return type raised nothing). Only worth revisiting if a workspace ever emits declarations.
+  - `skipLibCheck: false` in the base config. `packages/sim` overrides it to `true` because `bun-types@1.4.2` does not type-check against `@types/node`; `core` and `web` pass with full lib checking. If M0.4's React types fail lib check under TS 7, prefer a scoped override in `web` over weakening the base.
+  - Target and lib are **ES2023**, for `toSorted`/`toReversed`/`with`/`findLast` - the immutable-update methods that architecture rule 3 needs. Floor is Safari 16.4 / Chrome 110; set Vite's build target to match in M0.4.
+  - `core`'s tsconfig sets `"types": []` and no DOM lib: purity rule 1 is enforced by the type layer before Biome sees it. `sim` gets `types: ["bun"]`, `web` gets the DOM libs.
+  - There is no root `tsconfig.json`. `tsconfig.base.json` is the only shared config and each workspace extends it; editors resolve the nearest one. Project references were rejected because `composite` requires declaration emit, which conflicts with the source-consumption model above.
+  - Root `typecheck` is `bun run --filter '*' typecheck` (per-workspace `tsc --noEmit`, no project references). Root `build` is scoped to `./apps/*` because `core` and `sim` have no build output; it fails until M0.4 adds Vite, as does `dev`/`test`/`lint` until their tasks land.
+  - Deleted the Chrome-extension bootstrap leftovers: root `tsconfig.json` (`types: ["chrome"]`), and the empty `src/` and `dist/`. Added `CLAUDE.md` importing `AGENTS.md`.
+  - Bun was not present in the devcontainer; installed to `~/.bun/bin`. See Inbox.
 
 - [ ] **M0.2 Biome**
   deps: M0.1
@@ -38,6 +49,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   deps: M0.2, M0.3, M0.5
   GitHub Actions: install (cached), `verify`, `build`, e2e.
   AC: workflow file valid; runs green on push.
+  Partially done in M0.1: `ci.yml` was converted from npm to Bun (`oven-sh/setup-bun`, `bun install --frozen-lockfile`, `~/.bun/install/cache` keyed on `bun.lock`) and currently runs only `typecheck`, because `lint`, `test`, `build` and `test:e2e` do not exist yet. M0.6 adds those steps, plus a Playwright browser-install step. `dependabot.yml` moved to `package-ecosystem: "bun"` with grouped updates.
 
 ---
 
@@ -213,3 +225,8 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 ## Inbox
 
 Agents add discovered out-of-scope work here.
+
+- The devcontainer now installs Bun via `ghcr.io/devcontainers-extra/features/bun:1`, but this has only been verified by tag resolution, not by an actual container rebuild. Confirm on the next rebuild; the Bun in the current container was curl-installed to `~/.bun/bin`.
+- `.devcontainer` has no Playwright browser install. M0.5 will need `bunx playwright install --with-deps` in `postCreateCommand` or a matching CI step.
+- Dependabot auto-merge only actually waits for CI if branch protection on `main` marks the CI checks as required. Needs configuring in repo settings; not expressible in a file.
+- `.gitignore` still carries Chrome-extension entries (`*.crx`, `key.pem`) from the bootstrap template.
