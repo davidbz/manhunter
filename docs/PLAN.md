@@ -99,12 +99,21 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - Browsers are **not** in the repo. `.devcontainer/devcontainer.json`'s `postCreateCommand` now appends `bunx playwright install --with-deps chromium`, closing that Inbox item, but like the Bun feature it is unverified without a rebuild - the current container had the browser installed by hand, and `install-deps` needed `sudo`. **M0.6 needs the equivalent step in CI** before its e2e job can pass.
   - `.gitignore` gained `test-results/`, `playwright-report/`, `blob-report/`.
 
-- [ ] **M0.6 CI**
+- [x] **M0.6 CI**
   deps: M0.2, M0.3, M0.5
   GitHub Actions: install (cached), `verify`, `build`, e2e.
   AC: workflow file valid; runs green on push.
   Partially done in M0.1: `ci.yml` was converted from npm to Bun (`oven-sh/setup-bun`, `bun install --frozen-lockfile`, `~/.bun/install/cache` keyed on `bun.lock`). `dependabot.yml` moved to `package-ecosystem: "bun"` with grouped updates.
   Further done in M0.3: `lint` and `test` steps added, so the architecture-rule test gates every commit as architecture rule 2 requires. **M0.6 is now only `build` and e2e**, plus a Playwright browser-install step.
+  Notes:
+  - `ci.yml` now triggers on `push: branches: [main]` as well as `pull_request`. The AC says "runs green on push" and the workflow only had `pull_request`, so architecture rule 2's "every commit" was really "every PR". Post-merge pushes to `main` now run the same four jobs.
+  - Four parallel jobs: `actionlint`, `verify`, `build`, `e2e`. Parallel rather than chained on `needs` so a lint failure still tells you whether e2e is broken, and so **each job is a separately nameable required status check** - the Inbox's branch-protection item needs those names.
+  - The three Bun jobs share `.github/actions/setup`, a local composite action (install Bun, restore `~/.bun/install/cache`, `bun install --frozen-lockfile`). It takes `bun-version` as an **input**, not from workflow `env`: composite actions do not inherit the caller's `env` context in `with:` expressions. `BUN_VERSION` stays the single source of truth in `ci.yml`.
+  - Playwright browsers are cached at `~/.cache/ms-playwright`, keyed on `hashFiles('bun.lock')` - that is where the `@playwright/test` version lives, and a browser build is only valid for the release that downloaded it. `install --with-deps chromium` still runs on a cache hit; it skips the download and only applies the apt system deps. This closes the M0.5 Inbox item's CI half.
+  - `playwright-report/` is uploaded on failure only, with `retention-days: 7` (AGENTS.md section 5: the bound is declared, not left to the org default).
+  - Third-party actions are pinned by SHA with a version comment; `actions/*` are pinned by major tag. That is M0.1's existing convention, kept. Current majors at time of writing: `checkout@v7`, `cache@v6`, `upload-artifact@v7`, `setup-bun@v2.2.0`.
+  - Verified locally, not just by reading: `actionlint 1.7.12` exits 0 on the workflows, and **it does resolve the local composite action** - renaming the `bun-version` input made it report "input is not defined" at all three call sites. `bun run build`, `bun run verify` and `CI=1 bun run test:e2e` all pass. `CI=1` matters: it is the branch that turns on `forbidOnly`, retries, the `github` reporter and `reuseExistingServer: false`.
+  - Still unproven until a real push: nothing here has run on GitHub's runners. The one step most likely to need a fix is `install --with-deps`, which wants `sudo` (present on `ubuntu-latest`, absent in the devcontainer).
 
 ---
 
@@ -325,7 +334,7 @@ Raised in the M0.3 review. Each one blocks a named task; decide before that task
 Agents add discovered out-of-scope work here.
 
 - The devcontainer now installs Bun via `ghcr.io/devcontainers-extra/features/bun:1`, but this has only been verified by tag resolution, not by an actual container rebuild. Confirm on the next rebuild; the Bun in the current container was curl-installed to `~/.bun/bin`.
-- M0.5 added `bunx playwright install --with-deps chromium` to the devcontainer's `postCreateCommand`, but it has never run: the browser in the current container was installed by hand, and `install-deps` needed `sudo`. Confirm on the same rebuild that checks the Bun feature above. CI still has no browser step; that one is M0.6's.
+- M0.5 added `bunx playwright install --with-deps chromium` to the devcontainer's `postCreateCommand`, but it has never run: the browser in the current container was installed by hand, and `install-deps` needed `sudo`. Confirm on the same rebuild that checks the Bun feature above. (CI's browser step landed in M0.6.)
 - Dependabot auto-merge only actually waits for CI if branch protection on `main` marks the CI checks as required. Needs configuring in repo settings; not expressible in a file.
 - `.gitignore` still carries Chrome-extension entries (`*.crx`, `key.pem`) from the bootstrap template.
 - AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`; M0.3 added `vitest.config.ts` and `tsconfig.tools.json`; M0.5 added `playwright.config.ts` and `apps/web/e2e/`. Worth reconciling the block with reality.
