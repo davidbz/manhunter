@@ -97,6 +97,17 @@ const VIOLATIONS: readonly Violation[] = [
     },
   },
   {
+    id: "web_unredacted_report",
+    rule: "rule 4 (hidden information): web importing the unredacted Report",
+    dir: WEB_DIR,
+    source:
+      'import type { Report } from "@manhunter/core";\n\nexport const truth = (r: Report): string => r.truth;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
     id: "sim_class",
     rule: "no classes (AGENTS.md code style), outside core too",
     dir: SIM_DIR,
