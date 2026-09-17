@@ -6,7 +6,7 @@
     "ghcr.io/devcontainers-extra/features/bun:1": {}
   },
   "remoteUser": "node",
-  "postCreateCommand": "bun install",
+  "postCreateCommand": "bun install && bunx playwright install --with-deps chromium",
   "customizations": {
     "vscode": {
       "extensions": ["biomejs.biome"]

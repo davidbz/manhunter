@@ -68,3 +68,8 @@ Thumbs.db
 
 # Headroom
 .serena/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

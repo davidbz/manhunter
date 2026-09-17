@@ -83,11 +83,21 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - No CSS, no theme tokens, no `index.css`. M5.7 owns the visual pass; adding styling now would be scope creep it would only have to undo.
   - The dev server binds localhost only (`Network: use --host to expose`). **M0.5 should drive Playwright through a `webServer` entry in `playwright.config.ts`** rather than assuming a server is already up, and will need `--host` only if a browser outside the devcontainer ever connects.
 
-- [ ] **M0.5 Playwright**
+- [x] **M0.5 Playwright**
   deps: M0.4
   One e2e test: page loads and shows the title.
   Keep Playwright specs out of `src/**/*.test.ts` so Vitest does not try to run them; add `playwright.config.ts` to `tsconfig.tools.json`'s `include`.
   AC: `bun run test:e2e` passes headless.
+  Notes:
+  - `@playwright/test 1.63.0`, pinned exactly at the root, matching the devDependency convention. Root, not `apps/web`, because AGENTS.md's `test:e2e` script runs bare `playwright test` from the repo root and the `webServer` command is the root `bun run dev`.
+  - The two runners are separated by **location and extension**: Playwright owns `apps/web/e2e/**/*.spec.ts` (`testDir` + `testMatch`), Vitest owns `<workspace>/src/**/*.test.ts`. Neither can see the other's files; verified with `playwright test --list` (1 file) and `bun run test` (5 files, 18 tests, unchanged). **Keep new e2e specs as `*.spec.ts` under `e2e/`**; a `*.test.ts` there would be picked up by neither.
+  - `playwright.config.ts` is root-level and in `tsconfig.tools.json`'s `include`, along with `apps/web/e2e/**/*.ts` - the web workspace's own `include` is `["src"]`, so the specs would otherwise ship unchecked. That config has `types: ["bun"]` and no DOM lib, which is fine as long as specs avoid `page.evaluate` with DOM globals.
+  - Timeouts are named constants per AGENTS.md section 5: test 30s, expect 5s, web server 120s. Playwright's defaults are implicit; these are not.
+  - The spec imports `GAME_TITLE` from `@manhunter/core` rather than repeating the literal, and asserts it against **both** the `<h1>` and `document.title`. That makes the deliberate duplication in `apps/web/index.html` (M0.4's note) a guarded one. Verified by mutation: changing only the `<title>` fails the test.
+  - Chromium only. Adding Firefox and WebKit triples e2e time and browser download size for a game whose target is a desktop browser; add them in M5.7 if the visual pass needs cross-browser proof.
+  - `reuseExistingServer` is on locally and off under CI. CI is detected with `"CI" in process.env`, not `process.env["CI"]`, because `noPropertyAccessFromIndexSignature` and Biome's `useLiteralKeys` want opposite things (Inbox item). `in` satisfies both. **Use that form in any new root-level config**, or the info count rises.
+  - Browsers are **not** in the repo. `.devcontainer/devcontainer.json`'s `postCreateCommand` now appends `bunx playwright install --with-deps chromium`, closing that Inbox item, but like the Bun feature it is unverified without a rebuild - the current container had the browser installed by hand, and `install-deps` needed `sudo`. **M0.6 needs the equivalent step in CI** before its e2e job can pass.
+  - `.gitignore` gained `test-results/`, `playwright-report/`, `blob-report/`.
 
 - [ ] **M0.6 CI**
   deps: M0.2, M0.3, M0.5
@@ -315,10 +325,10 @@ Raised in the M0.3 review. Each one blocks a named task; decide before that task
 Agents add discovered out-of-scope work here.
 
 - The devcontainer now installs Bun via `ghcr.io/devcontainers-extra/features/bun:1`, but this has only been verified by tag resolution, not by an actual container rebuild. Confirm on the next rebuild; the Bun in the current container was curl-installed to `~/.bun/bin`.
-- `.devcontainer` has no Playwright browser install. M0.5 will need `bunx playwright install --with-deps` in `postCreateCommand` or a matching CI step.
+- M0.5 added `bunx playwright install --with-deps chromium` to the devcontainer's `postCreateCommand`, but it has never run: the browser in the current container was installed by hand, and `install-deps` needed `sudo`. Confirm on the same rebuild that checks the Bun feature above. CI still has no browser step; that one is M0.6's.
 - Dependabot auto-merge only actually waits for CI if branch protection on `main` marks the CI checks as required. Needs configuring in repo settings; not expressible in a file.
 - `.gitignore` still carries Chrome-extension entries (`*.crx`, `key.pem`) from the bootstrap template.
-- AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`; M0.3 added `vitest.config.ts` and `tsconfig.tools.json`. Worth reconciling the block with reality.
+- AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`; M0.3 added `vitest.config.ts` and `tsconfig.tools.json`; M0.5 added `playwright.config.ts` and `apps/web/e2e/`. Worth reconciling the block with reality.
 - AGENTS.md section 3 promises "maximum nesting depth of 2", but no Biome rule enforces it and `noExcessiveCognitiveComplexity` is not the same constraint. Either write a GritQL plugin for it or soften the wording.
 - `tools/` in the working tree also contains an unrelated, untracked `fetch_agent_tools.sh` from local tooling. Decide whether it belongs in the repo before `tools/` is committed.
 - AGENTS.md's command table should say that `bun test` (Bun's own runner) is not `bun run test` (Vitest). The two disagree on config, environment and assertion library, and the former silently half-runs the suite.

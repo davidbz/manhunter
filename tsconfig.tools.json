@@ -6,5 +6,11 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["vitest.config.ts", "apps/web/vite.config.ts", "tools/**/*.ts"]
+  "include": [
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "apps/web/vite.config.ts",
+    "apps/web/e2e/**/*.ts",
+    "tools/**/*.ts"
+  ]
 }
