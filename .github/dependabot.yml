@@ -1,11 +1,22 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
     labels:
       - "dependencies"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -13,3 +24,7 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+    groups:
+      actions:
+        patterns:
+          - "*"

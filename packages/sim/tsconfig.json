@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["bun"],
+    // bun-types 1.4.2 does not type-check cleanly against @types/node; the base config
+    // keeps skipLibCheck off everywhere else. Revisit when bun-types is fixed.
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
