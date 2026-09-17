@@ -1,0 +1,13 @@
+language js
+
+// AGENTS.md "Code style": data is types, logic is factory functions returning objects of
+// functions. tsconfig's erasableSyntaxOnly already rejects enums, namespaces and parameter
+// properties; classes are the remaining escape hatch, and Biome has no built-in rule for them.
+or {
+  js"class $_ { $_ }" as $declaration where {
+    register_diagnostic(span=$declaration, message="No classes. Data is plain types; logic is a factory function returning an object of functions.", severity="error")
+  },
+  js"class $_ extends $_ { $_ }" as $subclass where {
+    register_diagnostic(span=$subclass, message="No classes. Data is plain types; logic is a factory function returning an object of functions.", severity="error")
+  }
+}

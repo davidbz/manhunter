@@ -1,17 +1,138 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**", "!**/bun.lock", "!**/coverage", "!**/dist", "!**/playwright-report"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 100
   },
-  "linter": {
+  "assist": {
     "enabled": true,
-    "rules": { "preset": "recommended" }
+    "actions": { "source": { "organizeImports": "on" } }
   },
   "javascript": {
     "formatter": { "quoteStyle": "double" }
-  }
+  },
+  "plugins": [
+    "./tools/biome/no-classes.grit",
+    { "path": "./tools/biome/core-purity.grit", "includes": ["**/packages/core/**"] }
+  ],
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 10 }
+        }
+      },
+      "style": {
+        "noDefaultExport": "error",
+        "noEnum": "error",
+        "noMagicNumbers": "error",
+        "noNamespace": "error",
+        "noNegationElse": "error",
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error",
+        "noParameterProperties": "error",
+        "noUselessElse": "error",
+        "useAsConstAssertion": "error",
+        "useConsistentArrayType": { "level": "error", "options": { "syntax": "shorthand" } }
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noTsIgnore": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/core/**/*.ts"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "error" },
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Date": "packages/core is deterministic: take the time from GameConfig or an injected clock.",
+                  "XMLHttpRequest": "packages/core performs no I/O.",
+                  "alert": "packages/core has no DOM.",
+                  "crypto": "packages/core is deterministic: use the seeded RNG in core/src/rng.",
+                  "document": "packages/core has no DOM.",
+                  "fetch": "packages/core performs no I/O.",
+                  "localStorage": "packages/core performs no I/O.",
+                  "navigator": "packages/core has no DOM.",
+                  "performance": "packages/core is deterministic: take the time from GameConfig or an injected clock.",
+                  "process": "packages/core must run identically in the browser, Node and Bun.",
+                  "queueMicrotask": "packages/core is synchronous.",
+                  "requestAnimationFrame": "packages/core has no DOM.",
+                  "sessionStorage": "packages/core performs no I/O.",
+                  "setInterval": "packages/core is synchronous.",
+                  "setTimeout": "packages/core is synchronous.",
+                  "window": "packages/core has no DOM."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@manhunter/*", "react", "react-*", "zustand", "vitest"],
+                    "message": "packages/core imports nothing from the workspace and no UI or runner packages (architecture rule 5)."
+                  }
+                ]
+              }
+            }
+          },
+          "suspicious": { "noConsole": "error" }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/**/*.ts", "apps/web/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": { "noNodejsModules": "error" },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@manhunter/core": {
+                    "importNames": ["WorldState", "CriminalState"],
+                    "message": "apps/web only ever receives HunterView. Hidden state stays in core (architecture rule 4)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.config.ts", "**/*.config.js"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    },
+    {
+      "includes": ["**/limits.ts", "**/balance.ts"],
+      "linter": { "rules": { "style": { "noMagicNumbers": "off" } } }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "complexity": { "noExcessiveCognitiveComplexity": "off" },
+          "style": { "noMagicNumbers": "off" }
+        }
+      }
+    }
+  ]
 }

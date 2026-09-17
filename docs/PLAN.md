@@ -24,11 +24,24 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - Deleted the Chrome-extension bootstrap leftovers: root `tsconfig.json` (`types: ["chrome"]`), and the empty `src/` and `dist/`. Added `CLAUDE.md` importing `AGENTS.md`.
   - Bun was not present in the devcontainer; installed to `~/.bun/bin`. See Inbox.
 
-- [ ] **M0.2 Biome**
+- [x] **M0.2 Biome**
   deps: M0.1
   Add `biome.json`: formatter + linter + import sorting. Restrict globals/imports in `packages/core` (`Math.random`, `Date`, `console`, `process`, `window`, `document`, any `node:` import).
   Also enable rules backing the engineering principles in AGENTS.md: `noUselessElse`, `useEarlyReturn`-style complexity limits (`noExcessiveCognitiveComplexity`), no classes in `core`, no default exports, and a nesting-depth cap. Add `limits.ts` stubs in `core`, `sim`, and `web`.
   AC: `bun run lint` passes; a deliberately added `Math.random()` in core and a needless `else` both fail lint (verify, then remove).
+  Notes:
+  - Biome `2.5.14`, pinned exactly (no caret) to match the existing devDependency convention and because formatter output can shift between minors. Import sorting is `assist.actions.source.organizeImports`, not a lint rule, in Biome 2.
+  - `noRestrictedGlobals` only denies **bare** global names - `"Math.random"` as a denied global is silently ignored. Anything member-shaped needs a GritQL plugin. Two live in `tools/biome/`: `no-classes.grit` (repo-wide) and `core-purity.grit` (`Math.random`, core only).
+  - Plugin `includes` globs are anchored differently from `overrides.includes`: `packages/core/**` matches nothing, `**/packages/core/**` works. `overrides.includes` uses the un-prefixed form. Do not copy one into the other.
+  - `Date`, `process`, `window`, `document` and the rest are denied in core via `noRestrictedGlobals`; `node:` imports via `correctness/noNodejsModules`; `console` via `suspicious/noConsole`. `noRestrictedImports` also stops core importing `@manhunter/*`, React, Zustand or Vitest (architecture rule 5).
+  - Architecture rule 4 is now lint-enforced too: `apps/web` importing `WorldState` or `CriminalState` from `@manhunter/core` is an error. Extend that `importNames` list when new hidden-state types land in M1.2. It is a name check, not a type check, so M3.2 still owes the property test.
+  - `noMagicNumbers` is on repo-wide but **off** in `**/limits.ts`, `**/balance.ts` and `**/*.test.ts` - those files are the named-constant home, so the rule is inverted there. It ignores `0`, `1`, `2`, `-1` and object-literal property values by default, which matches AGENTS.md section 4.
+  - There is no nesting-depth rule in Biome. `noExcessiveCognitiveComplexity` is set to `maxAllowedComplexity: 10` as the closest proxy. Raise it deliberately if Dijkstra or min-cut in M1.4 trips it; do not disable it per-file.
+  - No `nursery` rules are enabled, deliberately: they change between minors and would break Dependabot bumps. `useExhaustiveSwitchCases` is the one worth wanting, and the `never` check in an exhaustive `switch` already gives it at compile time.
+  - `limits.ts` stubs carry the constants the later tasks that own each boundary will need (`maxMapGenerationAttempts` for M2.3, `maxGamesPerRun`/`maxOutputFileBytes` for M4.2, `maxReplayStringLength` for M3.9). Values are placeholders; the owning task tunes them and adds the over-the-limit test.
+  - The AC's "verify, then remove" was done manually - Vitest does not exist until M0.3, so nothing could be committed. All six violations fired (`Math.random`, `class`, `Date`, `console`, `node:fs`, needless `else`, plus `WorldState` in web and a default export). See Inbox: this should become a fixture-based test.
+  - `bun run verify` still fails at its `test` step because Vitest is M0.3. `typecheck` and `lint` both pass with zero warnings.
+  - CI still runs only `typecheck`; adding `lint` is M0.6's job per the note under it.
 
 - [ ] **M0.3 Vitest + fast-check**
   deps: M0.1
@@ -230,3 +243,7 @@ Agents add discovered out-of-scope work here.
 - `.devcontainer` has no Playwright browser install. M0.5 will need `bunx playwright install --with-deps` in `postCreateCommand` or a matching CI step.
 - Dependabot auto-merge only actually waits for CI if branch protection on `main` marks the CI checks as required. Needs configuring in repo settings; not expressible in a file.
 - `.gitignore` still carries Chrome-extension entries (`*.crx`, `key.pem`) from the bootstrap template.
+- M0.2's AC verifies the core-purity lint rules by hand and then deletes the evidence. Once Vitest lands (M0.3), replace it with a test that runs `biome check` over committed fixture files under `tools/biome/fixtures/` and asserts the expected rule ids fire. That is the only thing keeping architecture rules 1, 2, 4 and 5 honest on every commit.
+- AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`. Worth reconciling the block with reality.
+- AGENTS.md section 3 promises "maximum nesting depth of 2", but no Biome rule enforces it and `noExcessiveCognitiveComplexity` is not the same constraint. Either write a GritQL plugin for it or soften the wording.
+- `tools/` in the working tree also contains an unrelated, untracked `fetch_agent_tools.sh` from local tooling. Decide whether it belongs in the repo before `tools/` is committed.
