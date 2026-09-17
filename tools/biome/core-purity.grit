@@ -1,0 +1,8 @@
+language js
+
+// Architecture rule 1 and 2: packages/core is pure and deterministic. Biome's
+// noRestrictedGlobals only denies bare global names, so Math.random needs a plugin;
+// Date, process, window and friends are denied in biome.json instead.
+`Math.random()` as $call where {
+  register_diagnostic(span=$call, message="packages/core must be deterministic. Take randomness from the seeded RNG in core/src/rng.", severity="error")
+}
