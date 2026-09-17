@@ -119,11 +119,26 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ## M1 — Core foundations
 
-- [ ] **M1.1 Seeded RNG**
+- [x] **M1.1 Seeded RNG**
   deps: M0.3
   `core/src/rng`: small PRNG (e.g. mulberry32 or sfc32) with explicit state object, plus helpers `int`, `float`, `pick`, `weightedPick`, `shuffle`, `fork(label)` for derived streams.
   AC: property test: same seed ⇒ same sequence; `fork` streams independent and deterministic; RNG state is serializable.
   M1.1 is also where the IoC convention from AGENTS.md section 2 gets fixed for `core`: the RNG ships as `createRng(deps)`-style logic over a plain serializable state object, and its shape is the template every later core module copies. Record the chosen shape in the task note; nothing else in the plan establishes it, and retrofitting it after M2 is expensive.
+  Notes:
+  - **No new dependencies.** sfc32 plus splitmix32 seeding is ~90 lines; nothing in the registry was needed, so the installed versions are unchanged from M0.6.
+  - `core/src/rng.ts`, not a `rng/` directory. One concept, one file, per AGENTS.md "Code style"; split it only when a second generator appears.
+  - **This is the template for every later `core` module.** Data is `RngState` (four plain 32-bit words). Logic is `Rng`, a frozen-by-`readonly` object of pure functions returned from `createRng()`. Every draw has the shape `(state, ...args) => { state, value }`, so no generator object anywhere holds a position in the stream. `createRng()` takes no `deps` because the RNG is the bottom of the graph; **every module above it takes `deps: { rng: Rng }`** and is wired at the composition root. Tests inject a fake `Rng` by hand - no `vi.mock`.
+  - sfc32 over mulberry32: 128 bits of state gives `fork` room to derive streams that do not collide. Seeded through splitmix32 with 12 discarded warmup draws, so low-entropy seeds (0, 1) start decorrelated. `stateFromWord` is injective, so distinct 32-bit seeds always give distinct states.
+  - `fork(state, label)` **derives, it does not advance.** `fork(s, "map")` and `fork(s, "criminal")` are two independent streams off the same position, and the parent `s` is untouched. That is what M2.3's regenerate-with-derived-seeds wants: `fork(root, \`attempt-${n}\`)`. Forking from two *different* parent positions with the same label also diverges, so per-turn streams are safe.
+  - Fork labels are hashed with 32-bit FNV-1a, which can collide. Labels are code-authored constants, never user input, so no bound is declared on them; if a label ever comes from a replay string, M3.9's decode limit is the boundary that covers it. The "different labels differ" test uses a fixed realistic label list rather than `fc.string()` for this reason - a generated pair could collide and make it flaky.
+  - `pick`/`weightedPick` take `NonEmptyArray<T> = readonly [T, ...T[]]`, so "nothing to choose from" is a compile error at the call site instead of an `undefined` every caller must handle. Callers that filter a list must narrow it first. `NonEmptyArray` and `Weighted<T>` live in `rng.ts` for now; **M1.2 may move them to the shared types module** if anything else needs them.
+  - `weightedPick` clamps negative weights to 0 and falls back to a uniform draw when every weight is 0. Event tables (M3.7) should filter ineligible candidates rather than rely on that fallback; it exists to keep the function total, not as an API.
+  - `shuffle` uses the **insertion** variant of Fisher-Yates over `toSpliced`, not in-place swaps. Exactly uniform, fully immutable, and it needs no indexed reads - which matters because `noUncheckedIndexedAccess` turns every swap into an `undefined` check that is wrong when `T` itself includes `undefined`. Quadratic in allocations; irrelevant at the sizes `core` shuffles.
+  - `int(state, min, max)` on an empty or inverted range returns `min` and **consumes no state**. Callers must not rely on a fixed number of draws per call.
+  - `rng.test.ts` pins the first six `uint32` outputs for seed 1 as a golden vector. A replay is a seed plus an action list, so changing the generator silently invalidates every replay ever shared; that test makes it fail loudly instead.
+  - **Part of the architecture rule 2 debt M0.3 flagged is now paid:** the seeded-sequence property test exists. M3.8b still owes the byte-identical-final-state test.
+  - Coverage for `core` is 98.7% statements / 70% branches. The gaps are the provably unreachable `??` fallbacks that `noUncheckedIndexedAccess` forces on tuple reads. Relevant to the Inbox item about adding coverage thresholds: set branch thresholds below 100 or those fallbacks will block them.
+  - `bun run verify` passes. It still prints the two pre-existing `useLiteralKeys` infos on `tools/biome/architecture-rules.test.ts` (Inbox); unrelated to this task.
 
 - [ ] **M1.2 Core types**
   deps: M0.1, M0.3
