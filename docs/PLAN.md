@@ -68,11 +68,20 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - The spawn is bounded per AGENTS.md section 5 with a 60s timeout and an 8 MiB output cap, both named constants at the top of the file.
   - CI now runs `typecheck`, `lint` and `test`. Architecture rule 2 says a determinism test runs on every commit; until M1.1 and M3.8b exist, what runs on every commit is the proof that nondeterminism cannot enter `core`. **M1.1 owes the seeded-sequence property test and M3.8b owes the byte-identical-final-state test** to finish the rule.
 
-- [ ] **M0.4 Vite + React app shell**
+- [x] **M0.4 Vite + React app shell**
   deps: M0.1
   `apps/web` renders a placeholder page that imports a constant from `core`.
   M0.3 pulled in `vite@8.3.0` transitively as a Vitest dependency. Install the matching major so the tree holds one Vite, not two. Add `vite.config.ts` to `tsconfig.tools.json`'s `include`, set the build target to ES2023 per M0.1's note, and follow `core`'s two-project tsconfig split if React's types fail lib check rather than relaxing the base.
   AC: `bun run dev` serves it; `bun run build` produces static output.
+  Notes:
+  - `vite 8.3.0`, `@vitejs/plugin-react 6.1.1`, `react`/`react-dom 19.3.0`, `@types/react`/`@types/react-dom 19.3.0`, all pinned exactly and declared in `apps/web`, not at the root - they are the web app's tools, and the root only holds what `verify` needs. `vite@8.3.0` is exactly the version Vitest 5.0.1 resolves, so the tree holds one copy (verified: a single `node_modules/.bun/vite@8.3.0+...`). **Bump Vite and Vitest together**, or the tree forks.
+  - React's types pass under `skipLibCheck: false`; the fallback this task authorised (a two-project split in `web`, or a scoped override) was **not needed and not added**. The base config is still fully lib-checked everywhere except `sim` and `core`'s test project.
+  - The constant is `GAME_TITLE` in `core/src/meta.ts`, re-exported from `core/src/index.ts`. **M0.5's e2e should assert this string.** `apps/web/index.html` repeats it as a literal in `<title>`: the HTML shell cannot import from `core`, so the two are duplicated on purpose. If the title changes, change both.
+  - `vite.config.ts` sits at `apps/web/` root, outside that workspace's `include: ["src"]`, so it is type-checked by `tsconfig.tools.json` as M0.3 required. Its `BUILD_TARGET` is `es2023`, mirroring `tsconfig.base.json`; the two have no automatic link, so M0.1's ES2023 decision has to be changed in both places.
+  - `core` is consumed as TypeScript source in both modes, confirming M0.1's no-`dist` decision: `vite build` transformed 17 modules into one bundle containing `Manhunter`, and the dev server serves `packages/core/src/meta.ts` over `/@fs` with no prebundling. Nothing needs `optimizeDeps` tuning.
+  - `main.tsx` stays the composition root per AGENTS.md section 2: it finds the `#root` mount, throws if it is absent (`noNonNullAssertion` forbids the usual `!`), and renders `<App />` under `StrictMode`. `App.tsx` is presentation only. **M5.2's Zustand store is wired here**, not inside a component.
+  - No CSS, no theme tokens, no `index.css`. M5.7 owns the visual pass; adding styling now would be scope creep it would only have to undo.
+  - The dev server binds localhost only (`Network: use --host to expose`). **M0.5 should drive Playwright through a `webServer` entry in `playwright.config.ts`** rather than assuming a server is already up, and will need `--host` only if a browser outside the devcontainer ever connects.
 
 - [ ] **M0.5 Playwright**
   deps: M0.4
@@ -315,3 +324,4 @@ Agents add discovered out-of-scope work here.
 - AGENTS.md's command table should say that `bun test` (Bun's own runner) is not `bun run test` (Vitest). The two disagree on config, environment and assertion library, and the former silently half-runs the suite.
 - Coverage is generated for `core` but has no thresholds, so it can rot silently. Consider `coverage.thresholds` once `core` has real modules (after M1.2), tuned to whatever M1 actually reaches rather than an aspirational number.
 - All Vitest projects run in `environment: "node"`. M5's component tests need a DOM environment (`jsdom` or Vitest browser mode), which is a dependency decision not covered by the AGENTS.md stack table.
+- `bun run lint` exits 0 but prints two `lint/complexity/useLiteralKeys` infos on `tools/biome/architecture-rules.test.ts`. Biome wants `counted.changed`; `noPropertyAccessFromIndexSignature` in `tsconfig.base.json` wants `counted["changed"]`. The two rules disagree on index-signature reads. Decide which one yields (narrow the value's type at the boundary so neither fires, or turn `useLiteralKeys` off for `**/*.test.ts`). Noticed during M0.4; pre-existing, not caused by it.

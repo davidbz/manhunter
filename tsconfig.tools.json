@@ -6,5 +6,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["vitest.config.ts", "tools/**/*.ts"]
+  "include": ["vitest.config.ts", "apps/web/vite.config.ts", "tools/**/*.ts"]
 }
