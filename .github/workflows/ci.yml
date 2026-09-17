@@ -46,3 +46,12 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      # Includes tools/biome/architecture-rules.test.ts, which asserts the architecture rules
+      # in AGENTS.md still produce lint diagnostics. Architecture rule 2 requires this to run
+      # on every commit.
+      - name: Test
+        run: bun run test

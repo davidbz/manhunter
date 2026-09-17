@@ -41,28 +41,51 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `limits.ts` stubs carry the constants the later tasks that own each boundary will need (`maxMapGenerationAttempts` for M2.3, `maxGamesPerRun`/`maxOutputFileBytes` for M4.2, `maxReplayStringLength` for M3.9). Values are placeholders; the owning task tunes them and adds the over-the-limit test.
   - The AC's "verify, then remove" was done manually - Vitest does not exist until M0.3, so nothing could be committed. All six violations fired (`Math.random`, `class`, `Date`, `console`, `node:fs`, needless `else`, plus `WorldState` in web and a default export). See Inbox: this should become a fixture-based test.
   - `bun run verify` still fails at its `test` step because Vitest is M0.3. `typecheck` and `lint` both pass with zero warnings.
-  - CI still runs only `typecheck`; adding `lint` is M0.6's job per the note under it.
+  - CI ran only `typecheck` at the time; M0.3 added `lint` and `test` to it.
 
-- [ ] **M0.3 Vitest + fast-check**
+- [x] **M0.3 Vitest + fast-check**
   deps: M0.1
   Vitest workspace config covering all packages. Add `@fast-check/vitest`. One trivial test per workspace.
   AC: `bun run test` runs all workspaces; coverage report generated for `core`.
+  Notes:
+  - Vitest `5.0.1`, `@vitest/coverage-v8` `5.0.1`, `fast-check` `4.10.1`, `@fast-check/vitest` `0.5.0`, all pinned exactly at the root, matching the existing devDependency convention.
+  - "Workspace config" is stale wording: `vitest.workspace.ts` was deprecated in 3.2 and removed in 4. The single root `vitest.config.ts` declares `test.projects` inline (`core`, `sim`, `web`), so there is one config file, not four. Project `include` is `src/**/*.test.{ts,tsx}` - tests are co-located, never in a separate tree.
+  - `@vitest/coverage-v8` is a dependency beyond the AGENTS.md table. It is the only way to meet this task's coverage AC, and it is the provider Vitest itself ships; no alternative was added.
+  - Coverage is `enabled: true` in the config, so plain `bun run test` satisfies the AC with no second script. Reporters are `text-summary` + `html`; the `text` reporter prints an empty table under `projects` in 5.0.1. Coverage `include`/`exclude` globs are resolved **root-relative** even though each project has its own root, so `packages/core/src/**/*.ts` scopes the report to `core` (verified: the report lists core's `index.ts` and `limits.ts` and neither of the other two `limits.ts`).
+  - M0.2's core override denies importing `vitest`, which also hit co-located `*.test.ts` and blocked this task. `biome.json` now has a `packages/core/**/*.test.ts` override that repeats the pattern list **without** `vitest`. `@manhunter/*`, React and Zustand stay denied in core tests. Keep that list in sync if the core override's patterns change.
+  - `packages/core` is now two tsc projects: `tsconfig.json` (`exclude: ["src/**/*.test.ts"]`, unchanged purity - no DOM, `types: []`, `skipLibCheck: false`) and `tsconfig.test.json` (extends it, adds `skipLibCheck: true`). Vitest's declarations transitively reach `EventTarget`, `AbortSignal`, `WebSocket` and `DOMHighResTimeStamp`, which core's lib deliberately lacks. Its `typecheck` script runs both. `sim` and `web` needed no change. Anything M0.4 does to `web` should follow this shape rather than relaxing the base.
+  - New root `tsconfig.tools.json` type-checks root-level build configs, which no workspace `include` covers. It currently lists `vitest.config.ts`; **M0.4 must add `vite.config.ts` and M0.5 `playwright.config.ts`** or those files ship unchecked. Root `typecheck` now ends with `tsc --noEmit -p tsconfig.tools.json`. This is not a root `tsconfig.json` and does not revisit M0.1's rejection of project references.
+  - All three projects use `environment: "node"`. No DOM test environment exists yet; M5's component tests will need `jsdom` or Vitest browser mode, which is a new dependency decision at that point. Playwright (M0.5) covers the DOM flows until then.
+  - `fast-check` is a direct devDependency as well as a transitive one, so its major is pinned where AGENTS.md lists it. `fc` and `test.prop` are imported from `@fast-check/vitest`.
+  - `bun run test` runs Vitest under Node. `bun test` is Bun's own runner and will execute these files with different semantics; always use the script.
+  - `bun run verify` now passes all three steps for the first time.
+  - **Architecture rules are now enforced by a test, not by hand** (added on request, closing the M0.2 Inbox item). `tools/biome/architecture-rules.test.ts` holds a data table of fixtures that each break exactly one rule, writes them into the workspace paths the `biome.json` overrides target, runs one `biome check --reporter=json`, asserts the expected diagnostic category and message, then deletes them. Covers architecture rules 1, 2 (static half), 4 and 5, plus no-classes, no-default-export, no-useless-else and no-magic-numbers.
+  - Verified by mutation, not just by passing: setting `noUselessElse` to `off` and removing the GritQL plugins made exactly those two cases fail, and restoring the config made them pass again.
+  - Two traps in that test. Fixtures **cannot** be listed in `.gitignore`: `vcs.useIgnoreFile` makes biome skip ignored files, so every assertion silently found nothing. And a clean fixture and a file biome never opened both yield zero diagnostics, so the test asserts `summary.changed + summary.unchanged` equals the fixture count to tell them apart. Cleanup is in `afterAll`; a crashed run leaves `__arch_*__.ts` files that `git status` and `bun run lint` will both shout about, which is the intended failure mode.
+  - The JSON reporter prints an experimental-format warning on stderr. Biome is pinned exactly, so the shape is stable for now; a Biome bump that changes it will fail this test loudly rather than silently.
+  - Fixture sources are inline strings in the data table rather than committed `.ts` files under `tools/biome/fixtures/` as the Inbox entry suggested. Committed fixtures would have to be excluded from `bun run lint` to keep it green, and anything excluded from lint is also invisible to this test.
+  - A fourth Vitest project, `tools`, runs repo-level tests with `root: "."`. It is outside the three workspaces on purpose: the test spawns a process and writes files, which `core` may not do. `tsconfig.tools.json` now covers `tools/**/*.ts` with `types: ["bun"]`.
+  - The spawn is bounded per AGENTS.md section 5 with a 60s timeout and an 8 MiB output cap, both named constants at the top of the file.
+  - CI now runs `typecheck`, `lint` and `test`. Architecture rule 2 says a determinism test runs on every commit; until M1.1 and M3.8b exist, what runs on every commit is the proof that nondeterminism cannot enter `core`. **M1.1 owes the seeded-sequence property test and M3.8b owes the byte-identical-final-state test** to finish the rule.
 
 - [ ] **M0.4 Vite + React app shell**
   deps: M0.1
   `apps/web` renders a placeholder page that imports a constant from `core`.
+  M0.3 pulled in `vite@8.3.0` transitively as a Vitest dependency. Install the matching major so the tree holds one Vite, not two. Add `vite.config.ts` to `tsconfig.tools.json`'s `include`, set the build target to ES2023 per M0.1's note, and follow `core`'s two-project tsconfig split if React's types fail lib check rather than relaxing the base.
   AC: `bun run dev` serves it; `bun run build` produces static output.
 
 - [ ] **M0.5 Playwright**
   deps: M0.4
   One e2e test: page loads and shows the title.
+  Keep Playwright specs out of `src/**/*.test.ts` so Vitest does not try to run them; add `playwright.config.ts` to `tsconfig.tools.json`'s `include`.
   AC: `bun run test:e2e` passes headless.
 
 - [ ] **M0.6 CI**
   deps: M0.2, M0.3, M0.5
   GitHub Actions: install (cached), `verify`, `build`, e2e.
   AC: workflow file valid; runs green on push.
-  Partially done in M0.1: `ci.yml` was converted from npm to Bun (`oven-sh/setup-bun`, `bun install --frozen-lockfile`, `~/.bun/install/cache` keyed on `bun.lock`) and currently runs only `typecheck`, because `lint`, `test`, `build` and `test:e2e` do not exist yet. M0.6 adds those steps, plus a Playwright browser-install step. `dependabot.yml` moved to `package-ecosystem: "bun"` with grouped updates.
+  Partially done in M0.1: `ci.yml` was converted from npm to Bun (`oven-sh/setup-bun`, `bun install --frozen-lockfile`, `~/.bun/install/cache` keyed on `bun.lock`). `dependabot.yml` moved to `package-ecosystem: "bun"` with grouped updates.
+  Further done in M0.3: `lint` and `test` steps added, so the architecture-rule test gates every commit as architecture rule 2 requires. **M0.6 is now only `build` and e2e**, plus a Playwright browser-install step.
 
 ---
 
@@ -72,34 +95,50 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   deps: M0.3
   `core/src/rng`: small PRNG (e.g. mulberry32 or sfc32) with explicit state object, plus helpers `int`, `float`, `pick`, `weightedPick`, `shuffle`, `fork(label)` for derived streams.
   AC: property test: same seed ⇒ same sequence; `fork` streams independent and deterministic; RNG state is serializable.
+  M1.1 is also where the IoC convention from AGENTS.md section 2 gets fixed for `core`: the RNG ships as `createRng(deps)`-style logic over a plain serializable state object, and its shape is the template every later core module copies. Record the chosen shape in the task note; nothing else in the plan establishes it, and retrofitting it after M2 is expensive.
 
 - [ ] **M1.2 Core types**
-  deps: M0.1
+  deps: M0.1, M0.3
   `MapGraph`, `Node`, `Edge` (discriminated by `kind`), `Exit`, `WorldState`, `CriminalState`, `HunterState`, `Report`, `HunterAction`, `CriminalAction`, `GameEvent`, `GameConfig`. Types only plus constructors.
+  Also declare the visibility split in full here, not later: `WorldState` (everything), `HunterView` (M3.2), and the post-game reveal type M3.9/M5.6 need. See "Open questions" - the reveal type has to exist before M3.9 designs around it.
   AC: typecheck passes; a test asserts a sample `WorldState` round-trips through JSON.
 
 - [ ] **M1.3 Balance constants**
   deps: M1.2
   `core/src/balance.ts` with all numeric knobs referenced by DESIGN.md (AP per turn, trust thresholds, MIN_ESCAPE_TURNS, etc.), grouped and commented.
+  Includes the score weights M3.10 needs, and whichever of political pressure and unit fatigue survive the "Open questions" decision.
   AC: exported as a typed readonly object.
 
-- [ ] **M1.4 Graph utilities**
-  deps: M1.2
-  Neighbors by travel mode, Dijkstra shortest path with edge costs, reachability, and min-cut (Edmonds–Karp on unit capacities) between a node and a set of nodes.
-  AC: unit tests on hand-built graphs with known answers.
+- [ ] **M1.4a Paths and reachability**
+  deps: M1.2, M0.3
+  Neighbors by travel mode, Dijkstra shortest path with edge costs, reachability. Bounded by `LIMITS.maxSearchExpansions`.
+  AC: unit tests on hand-built graphs with known answers; a search that would exceed the expansion cap returns an error result rather than looping.
+
+- [ ] **M1.4b Min-cut**
+  deps: M1.4a
+  Min-cut (Edmonds–Karp on unit capacities) between a node and a set of nodes.
+  Split out of M1.4: max-flow is a session on its own, and it is the one function likely to trip Biome's `noExcessiveCognitiveComplexity: 10`. Split the augmenting-path search from the flow loop rather than raising the ceiling.
+  AC: unit tests on hand-built graphs with known cut values, including a graph whose min-cut is 1 and one whose min-cut is 3.
 
 ---
 
 ## M2 — Map generation
 
-- [ ] **M2.1 Grid-based generator**
-  deps: M1.1, M1.4
-  Jittered grid of nodes, roads between neighbors with random removal, assign district types by region, one river splitting the map with 2–3 bridges, 3 exits on the edge, criminal start near center.
-  AC: generates a `MapGraph` from a seed; same seed ⇒ identical map.
+- [ ] **M2.1a Grid topology**
+  deps: M1.1, M1.4a
+  Jittered grid of nodes, road edges between neighbours, random edge removal that keeps the graph connected.
+  Split out of M2.1: topology and content are independent, separately testable, and together they were 4-5 pieces in one session.
+  AC: generates a connected `MapGraph` skeleton from a seed; same seed ⇒ identical graph.
+
+- [ ] **M2.1b Map content**
+  deps: M2.1a
+  District types by region, one river splitting the map with 2–3 bridges, 3 exits on the edge, criminal start near centre.
+  AC: every node has a `districtType`; the river is crossable only at its bridges; same seed ⇒ identical assignment.
 
 - [ ] **M2.2 Validator**
-  deps: M2.1
+  deps: M2.1b, M1.4b
   Implement every rule in DESIGN.md "Generation validity". Return a list of violations, not a boolean.
+  Needs min-cut (M1.4b) for the "min-cut between start and exits ≥ 2" rule.
   AC: unit tests with hand-built invalid maps hit each rule.
 
 - [ ] **M2.3 Generate-until-valid**
@@ -110,7 +149,8 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 - [ ] **M2.4 Map debug export**
   deps: M2.3
   Function to export a map as SVG string (for eyeballing in `sim`, no DOM required).
-  AC: `sim` can write `map-<seed>.svg`.
+  The AC needs `sim` to write a file, and `sim` has no file-writing boundary until M4.2. M2.4 therefore owns that boundary: a bounded write helper honouring `LIMITS.maxOutputFileBytes`, with the over-the-limit test AGENTS.md section 5 requires. M4.2 reuses it rather than writing its own. The SVG builder itself stays in `core` and returns a string; only `sim` touches the filesystem.
+  AC: `sim` can write `map-<seed>.svg`; an oversized SVG is rejected as an error result, not truncated.
 
 ---
 
@@ -151,22 +191,36 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   Data-driven events (trigger, weight, apply). Implement: eyewitness, prank call, civilian hurt, nightfall, rush hour.
   AC: each event unit-tested; events only fire when triggers hold.
 
-- [ ] **M3.8 `step` and end conditions**
+- [ ] **M3.8a `step` and the five phases**
   deps: M3.3–M3.7
-  `step(world, hunterActions) => { world, events }` running the five phases. Capture, escape, trust collapse, casualties, bankruptcy.
-  AC: determinism property test (seed + action list ⇒ identical final state over 200 random games); meters always within bounds.
+  `step(world, hunterActions) => { world, events }` running intel, events, planning, resolution, consequences.
+  Split out of M3.8: the phase loop is the integration point for six prior tasks, and pairing it with five end conditions and a 200-game property test was a session and a half.
+  AC: each phase has a test asserting what it does and does not touch; meters always within bounds.
+
+- [ ] **M3.8b End conditions and determinism**
+  deps: M3.8a
+  Capture, escape, trust collapse, casualties, bankruptcy.
+  AC: each end condition has a test that reaches it; determinism property test (seed + action list ⇒ identical final state over 200 random games).
 
 - [ ] **M3.9 Replay format**
-  deps: M3.8
-  `Replay = { version, seed, config, actions[] }`, encode to a compact URL-safe string, `replay(replay) => WorldState[]`.
-  AC: replaying recorded games reproduces final state exactly.
+  deps: M3.8b, M3.10
+  `Replay = { version, seed, config, actions[] }`, encode to a compact URL-safe string, replay to a sequence of frames.
+  The original signature `replay(replay) => WorldState[]` cannot be used by M5.6: architecture rule 4 forbids `apps/web` from importing `WorldState`, and `biome.json` already blocks it by name. DESIGN.md still requires the replay viewer to reveal the criminal's true path. Resolve with a third type declared in M1.2 - a post-game reveal frame carrying the hunter view plus the criminal's true position for that turn, and nothing else. `WorldState[]` may exist inside `core` as an intermediate; it must not cross into `web`.
+  Bounded by `LIMITS.maxReplayStringLength` at decode, before parsing or allocating, with an over-the-limit test.
+  AC: replaying recorded games reproduces final state exactly; `web` can render a full replay without importing `WorldState`; a replay string one character over the limit is rejected.
+
+- [ ] **M3.10 Scoring**
+  deps: M3.8b, M1.3
+  Score a finished game per DESIGN.md "End conditions": turns taken, budget spent, civilian harm, trust remaining, captured alive. Pure function from a finished world to a typed breakdown; weights live in `balance.ts`.
+  Added in review: DESIGN.md specifies a score and M5.6 renders a "score breakdown", but nothing in the plan computed one.
+  AC: unit tests pin the breakdown for two hand-built finished games; the breakdown is serializable and carries its components, not just a total.
 
 ---
 
 ## M4 — Headless simulation and balance
 
 - [ ] **M4.1 Scripted hunter bots**
-  deps: M3.8
+  deps: M3.8b, M3.2
   `random`, `greedy-roadblock` (block edges on the shortest path to nearest exit), `heatmap-chaser` (placeholder until M5.1).
   AC: bots only use `HunterView`.
 
@@ -185,23 +239,25 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 ## M5 — Web UI (dispatch style)
 
 - [ ] **M5.1 Belief heatmap (core)**
-  deps: M3.8
+  deps: M3.8b
   Compute probability over nodes from `HunterView` history per DESIGN.md.
   AC: mass sums to 1; negative evidence reduces mass on searched nodes; confirmed sighting concentrates mass.
 
 - [ ] **M5.2 Game store**
-  deps: M3.8
+  deps: M3.8b
   Zustand store holding `WorldState` privately and exposing only `HunterView` + dispatch functions.
   AC: components cannot access `WorldState` via exported types.
 
 - [ ] **M5.3 Map renderer (SVG)**
-  deps: M5.2
+  deps: M5.2, M5.1
   `MapRenderer` component: nodes, typed edges, exits, roadblocks, heatmap overlay, selection.
+  M5.1 added to deps in review: the overlay has nothing to draw without the belief distribution.
   AC: Playwright: clicking a node selects it.
 
 - [ ] **M5.4 Report feed + meters**
   deps: M5.2
   Timestamped feed (observed vs received turn), meters for AP, budget, trust, pressure, clock.
+  The meter list here must match whatever the "Open questions" decision keeps in the MVP; pressure and fatigue currently have no task that produces them.
   AC: renders from view; new reports highlighted.
 
 - [ ] **M5.5 Action panel + end turn**
@@ -210,7 +266,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   AC: Playwright: start game → roadblock → end turn → turn counter advances.
 
 - [ ] **M5.6 End screen + replay viewer**
-  deps: M3.9, M5.5
+  deps: M3.9, M3.10, M5.5
   Score breakdown; replay scrubber showing true criminal path over the heatmap; shareable replay link.
   AC: Playwright: finish a seeded game and open replay.
 
@@ -235,6 +291,16 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ---
 
+## Open questions
+
+Raised in the M0.3 review. Each one blocks a named task; decide before that task starts, not during it.
+
+- **MVP meter set.** DESIGN.md lists political pressure and unit fatigue as hunter resources, and M5.4 renders a pressure meter, but no M3 task creates or advances either. Decide before M1.2 fixes `HunterState`: keep both in the MVP (each needs a rule in M3.8a's consequences phase), keep pressure only, or cut both and drop the meter from M5.4. Cutting is the smaller MVP; pressure is the one that earns its keep, because DESIGN.md's "political override" events depend on it.
+- **Post-game reveal type.** M3.9's resolution is written into the task: a reveal frame declared in M1.2, never `WorldState` in `web`. Confirm the shape there rather than at M3.9, because M3.2's `HunterView` and this type are siblings and should be designed together.
+- **Score model.** DESIGN.md names the score components but no weights or ranges. M1.3 has to invent them so M3.10 can use them. Fine to decide at M1.3; flagged so it is not discovered at M5.6.
+
+---
+
 ## Inbox
 
 Agents add discovered out-of-scope work here.
@@ -243,7 +309,9 @@ Agents add discovered out-of-scope work here.
 - `.devcontainer` has no Playwright browser install. M0.5 will need `bunx playwright install --with-deps` in `postCreateCommand` or a matching CI step.
 - Dependabot auto-merge only actually waits for CI if branch protection on `main` marks the CI checks as required. Needs configuring in repo settings; not expressible in a file.
 - `.gitignore` still carries Chrome-extension entries (`*.crx`, `key.pem`) from the bootstrap template.
-- M0.2's AC verifies the core-purity lint rules by hand and then deletes the evidence. Once Vitest lands (M0.3), replace it with a test that runs `biome check` over committed fixture files under `tools/biome/fixtures/` and asserts the expected rule ids fire. That is the only thing keeping architecture rules 1, 2, 4 and 5 honest on every commit.
-- AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`. Worth reconciling the block with reality.
+- AGENTS.md's "Repository layout" block omits `tools/`, `.github/`, `.devcontainer/` and `LICENSE`, all of which exist. M0.2 added `tools/biome/*.grit`; M0.3 added `vitest.config.ts` and `tsconfig.tools.json`. Worth reconciling the block with reality.
 - AGENTS.md section 3 promises "maximum nesting depth of 2", but no Biome rule enforces it and `noExcessiveCognitiveComplexity` is not the same constraint. Either write a GritQL plugin for it or soften the wording.
 - `tools/` in the working tree also contains an unrelated, untracked `fetch_agent_tools.sh` from local tooling. Decide whether it belongs in the repo before `tools/` is committed.
+- AGENTS.md's command table should say that `bun test` (Bun's own runner) is not `bun run test` (Vitest). The two disagree on config, environment and assertion library, and the former silently half-runs the suite.
+- Coverage is generated for `core` but has no thresholds, so it can rot silently. Consider `coverage.thresholds` once `core` has real modules (after M1.2), tuned to whatever M1 actually reaches rather than an aspirational number.
+- All Vitest projects run in `environment: "node"`. M5's component tests need a DOM environment (`jsdom` or Vitest browser mode), which is a dependency decision not covered by the AGENTS.md stack table.

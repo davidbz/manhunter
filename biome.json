@@ -97,6 +97,26 @@
       }
     },
     {
+      "includes": ["packages/core/**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@manhunter/*", "react", "react-*", "zustand"],
+                    "message": "packages/core imports nothing from the workspace and no UI packages (architecture rule 5). Its own tests may import the runner."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["apps/web/**/*.ts", "apps/web/**/*.tsx"],
       "linter": {
         "rules": {

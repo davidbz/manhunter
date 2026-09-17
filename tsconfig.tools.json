@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Build-tool configs pull in their tool's declarations, which reach Node and DOM globals
+    // that no workspace lib provides. Their own source is still checked.
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  "include": ["vitest.config.ts", "tools/**/*.ts"]
+}

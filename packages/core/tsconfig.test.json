@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Vitest's declarations reach DOM globals (EventTarget, AbortSignal, WebSocket) that core's
+    // lib deliberately lacks. The relaxation is confined to this project so core's own sources
+    // stay fully lib-checked with no DOM and no ambient types.
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.test.ts"],
+  "exclude": []
+}
