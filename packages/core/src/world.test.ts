@@ -36,6 +36,7 @@ const config: GameConfig = {
   startHour: START_HOUR,
   maxTurns: MAX_TURNS,
   map: { columns: 8, rows: 6, exitCount: 3 },
+  difficulty: "standard",
 };
 
 const map: MapGraph = {

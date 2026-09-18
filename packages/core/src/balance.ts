@@ -10,8 +10,10 @@
  * Bounds that stop a loop running away are not balance; they live in `limits.ts`.
  */
 
-import type { MapConfig } from "./config";
+import type { Difficulty, MapConfig } from "./config";
+import type { CriminalProfile } from "./criminal";
 import type { DistrictType, EdgeKind, EdgeProperties } from "./map";
+import type { NonEmptyArray, Weighted } from "./rng";
 import type { GameOutcome } from "./world";
 
 /** The numeric form of DESIGN.md's "District properties" table. Every rate is in [0, 1]. */
@@ -105,6 +107,25 @@ const AMATEUR: CriminalProfileWeights = {
   noise: 0.35,
   hideAboveHeat: 60,
   civilianHarmChance: 0.06,
+};
+
+/**
+ * Which criminal a difficulty may put in the city. The hunt draws from the pool for its setup's
+ * difficulty (PLAN M3.1a), so the profile is a consequence of the seed and never of a player
+ * choice, which is what keeps a shared replay link from spoiling the hunt it replays.
+ *
+ * All three pools name `amateur` alone because it is the only profile with weights above, for the
+ * reason M1.3 gave for not inventing the other three: weights for behaviour that does not exist
+ * are balance nobody can tune. PLAN M6 is what makes these rows differ. `balance.test.ts` pins the
+ * invariant that a pooled profile always has weights.
+ *
+ * Annotated rather than inferred, for the same reason `MAP` is: a test and a balance sweep both
+ * need to vary a pool without the literal types of the rest rejecting it.
+ */
+const CRIMINAL_POOLS: Readonly<Record<Difficulty, NonEmptyArray<Weighted<CriminalProfile>>>> = {
+  easy: [{ value: "amateur", weight: 1 }],
+  standard: [{ value: "amateur", weight: 1 }],
+  hard: [{ value: "amateur", weight: 1 }],
 };
 
 const DEFAULT_MAP: MapConfig = { columns: 8, rows: 6, exitCount: 3 };
@@ -253,6 +274,7 @@ export const BALANCE = {
     desperationMax: 100,
     desperationPerTurn: 2,
     profiles: { amateur: AMATEUR },
+    pools: CRIMINAL_POOLS,
   },
 
   endConditions: {

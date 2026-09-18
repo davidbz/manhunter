@@ -38,6 +38,14 @@ export const LIMITS = {
    * the rule undecided rather than letting a partial scan claim the chokepoint is absent.
    */
   maxChokepointCandidates: 64,
+  /**
+   * Turns a single hunt may last (PLAN M3.1a). `GameSetup.maxTurns` is the deadline the player
+   * asks for, so like the grid size it arrives from a replay string and is untrusted input; a
+   * setup over this is rejected rather than clamped. It is a time bound on every loop that runs
+   * once per turn - `sim`'s batch runner and M3.9's replay both do - and 240 is ten times
+   * `balance.time.maxTurns`, which is room to experiment without room to hang.
+   */
+  maxGameTurns: 240,
   /** Candidate actions the criminal AI may enumerate in one turn (PLAN M3.5). */
   maxAiCandidates: 256,
 } as const;
