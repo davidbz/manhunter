@@ -71,6 +71,7 @@ describe("MapGraph", () => {
       nodes: [makeNode(downtown, "downtown", { x: 0, y: 0 })],
       edges: [makeEdge("road", makeEdgeId("e1"), downtown, riverside)],
       exits: [makeExit(airport, "airport")],
+      river: { points: [{ x: 0, y: 0 }] },
       incidentNodeId: downtown,
     };
     expect(JSON.parse(JSON.stringify(graph))).toEqual(graph);

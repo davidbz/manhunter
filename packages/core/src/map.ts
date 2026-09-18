@@ -81,10 +81,24 @@ export type Exit = {
   readonly schedule: ExitSchedule;
 };
 
+/**
+ * Where the river runs, in layout coordinates, or `null` on a city that has none. Presentation
+ * only: everything the river does to the rules is already expressed in which edges exist and
+ * which of them are `bridge` (PLAN M2.1b). The debug export (M2.4) and the renderer (M5.3a) draw
+ * it; no rule reads it.
+ *
+ * It lives on the map rather than only on the generator's topology because the renderer reads
+ * `HunterView.map`, so a river that stopped at the topology would be undrawable (PLAN M2.1c).
+ */
+export type River = {
+  readonly points: readonly Position[];
+};
+
 export type MapGraph = {
   readonly nodes: readonly MapNode[];
   readonly edges: readonly MapEdge[];
   readonly exits: readonly Exit[];
+  readonly river: River | null;
   /**
    * Where the hunt begins: the crime scene, which is also the criminal's start node. Known to
    * both sides, which is why a `MapGraph` may be handed to the hunter whole. Anything the hunter

@@ -149,7 +149,10 @@
       "includes": ["**/*.test.ts", "**/*.test.tsx"],
       "linter": {
         "rules": {
-          "complexity": { "noExcessiveCognitiveComplexity": "off" },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off",
+            "useLiteralKeys": "off"
+          },
           "style": { "noMagicNumbers": "off" }
         }
       }

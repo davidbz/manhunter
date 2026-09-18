@@ -20,7 +20,7 @@ You run a manhunt. A criminal is loose in a city and heading for a way out. You 
 
 ## Time and turns
 
-One turn ≈ one in-game hour. A standard hunt starts at a random time of day and lasts at most ~24 turns.
+One turn ≈ one in-game hour. A standard hunt starts at a random time of day and lasts at most ~24 turns. The start hour is derived from the seed rather than chosen by the player, so it is not part of the player-visible setup a replay string carries.
 
 ### Turn phases
 
@@ -54,7 +54,7 @@ A graph.
 - Every exit is reachable from the criminal start.
 - Shortest start→nearest-exit path ≥ `MIN_ESCAPE_TURNS`.
 - Min-cut between start and the set of exits ≥ 2 (one roadblock never wins).
-- At least one chokepoint (bridge or tunnel) exists that matters.
+- At least one chokepoint exists that matters: a `bridge` or `tunnel` edge whose removal strictly increases the shortest start→nearest-exit cost. A city whose river could not be bridged has no such edge and is regenerated, not accepted.
 - Start is not adjacent to an exit.
 
 Generation is seeded. Invalid maps are rejected and regenerated with a derived seed.
@@ -109,6 +109,8 @@ Every report has: `observedAtTurn`, `receivedAtTurn`, `source`, `location`, `con
 - **CCTV:** reliable, delayed by 1–2 turns.
 - **Prank:** rate scales with reward and media attention. Detectable by inconsistency (e.g. impossible travel time).
 - **Planted:** from false trails or accomplices.
+
+A report's `truth` is never visible, and never visible indirectly either: the event feed says a report arrived, not what kind of report it was. Telling a prank from a sighting is the player's job.
 
 ## Events
 

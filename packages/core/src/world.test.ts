@@ -49,6 +49,7 @@ const map: MapGraph = {
     makeEdge("bridge", makeEdgeId("e2"), riverside, airport),
   ],
   exits: [makeExit(airport, "airport")],
+  river: null,
   incidentNodeId: downtown,
 };
 

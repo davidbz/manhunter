@@ -26,6 +26,7 @@ const graphOf = (nodeNames: readonly string[], edges: readonly MapEdge[]): MapGr
   nodes: nodeNames.map(node),
   edges,
   exits: [],
+  river: null,
   incidentNodeId: makeNodeId(nodeNames[0] ?? ""),
 });
 

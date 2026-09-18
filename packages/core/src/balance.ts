@@ -130,6 +130,12 @@ export type MapGenerationSettings = {
   readonly nodeSpacing: number;
   /** How far a node may drift from its cell, as a fraction of `nodeSpacing`. */
   readonly positionJitter: number;
+  /**
+   * How far from the grid's middle the crime scene may sit, in cells (Chebyshev). DESIGN.md wants
+   * the criminal to start "near centre"; this is how near. Interior nodes only, so the start is
+   * never on the border and never adjacent to an exit.
+   */
+  readonly startCentreRadius: number;
   /** Fraction of the full grid's edges the generator *attempts* to remove. */
   readonly edgeRemovalRate: number;
   /**
@@ -148,6 +154,7 @@ const MAP: MapGenerationSettings = {
   maxBridges: 3,
   nodeSpacing: 100,
   positionJitter: 0.3,
+  startCentreRadius: 1,
   edgeRemovalRate: 0.18,
   footpathRate: 0.2,
 };
