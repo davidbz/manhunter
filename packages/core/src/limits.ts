@@ -22,6 +22,14 @@ export const LIMITS = {
    * A search that reaches it is a generator bug, not a workload.
    */
   maxSearchExpansions: 5_000,
+  /**
+   * Bridge and tunnel edges the chokepoint rule may test (PLAN M2.2). Each candidate costs a whole
+   * shortest-path search with that edge removed, so this is a time bound on validation rather than
+   * a statement about maps. A generated map carries at most `balance.map.maxBridges` of them and
+   * no tunnels at all, so this is an order of magnitude of headroom; a map that reaches it leaves
+   * the rule undecided rather than letting a partial scan claim the chokepoint is absent.
+   */
+  maxChokepointCandidates: 64,
   /** Candidate actions the criminal AI may enumerate in one turn (PLAN M3.5). */
   maxAiCandidates: 256,
 } as const;

@@ -80,6 +80,14 @@ export type {
   TopologyResult,
 } from "./topology";
 export { createTopologyLogic } from "./topology";
+export type {
+  ValidationRequest,
+  ValidationResult,
+  ValidationRule,
+  ValidatorLogic,
+  Violation,
+} from "./validator";
+export { createValidatorLogic } from "./validator";
 export type { HunterReport, HunterView, RevealFrame } from "./view";
 export type { GameOutcome, WorldState } from "./world";
 export { IN_PROGRESS, makeWorldState } from "./world";
