@@ -43,6 +43,7 @@ Two version couplings are not optional:
 manhunter/
 ├── AGENTS.md
 ├── CLAUDE.md               # imports AGENTS.md
+├── LICENSE
 ├── biome.json
 ├── package.json            # Bun workspaces root
 ├── tsconfig.base.json
