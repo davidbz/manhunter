@@ -110,6 +110,49 @@ const AMATEUR: CriminalProfileWeights = {
 const DEFAULT_MAP: MapConfig = { columns: 8, rows: 6, exitCount: 3 };
 
 /**
+ * What the generator is allowed to build (PLAN M2.1a-M2.2). Annotated rather than inferred so
+ * that the rates stay plain `number`s: a balance sweep and a test both need to vary one knob
+ * without the rest of the object's literal types rejecting it.
+ */
+export type MapGenerationSettings = {
+  readonly defaults: MapConfig;
+  /**
+   * DESIGN.md "Generation validity": the criminal must need this many turns to reach an exit.
+   * Measured **on foot** (PLAN "Decisions"), which is the criminal's only MVP travel mode and
+   * the only mode under which the threshold is reachable on a default-sized grid at all.
+   */
+  readonly minEscapeTurns: number;
+  /** One roadblock never wins. */
+  readonly minCutToExits: number;
+  readonly minBridges: number;
+  readonly maxBridges: number;
+  /** Layout units between grid cells. Presentation only; no rule reads a position. */
+  readonly nodeSpacing: number;
+  /** How far a node may drift from its cell, as a fraction of `nodeSpacing`. */
+  readonly positionJitter: number;
+  /** Fraction of the full grid's edges the generator *attempts* to remove. */
+  readonly edgeRemovalRate: number;
+  /**
+   * Fraction of surviving edges laid as footpaths rather than roads. Footpaths are the only
+   * unblockable edge kind (`EDGES` above), so this is what stops a map from being sealable with
+   * roadblocks alone; keep it above zero.
+   */
+  readonly footpathRate: number;
+};
+
+const MAP: MapGenerationSettings = {
+  defaults: DEFAULT_MAP,
+  minEscapeTurns: 6,
+  minCutToExits: 2,
+  minBridges: 2,
+  maxBridges: 3,
+  nodeSpacing: 100,
+  positionJitter: 0.3,
+  edgeRemovalRate: 0.18,
+  footpathRate: 0.2,
+};
+
+/**
  * What each ending is worth before the components are applied. Only a capture scores a base:
  * DESIGN.md scores the win, and a loss is left to be told apart by its components.
  */
@@ -131,15 +174,7 @@ export const BALANCE = {
     rushHourHours: [7, 8, 17, 18],
   },
 
-  map: {
-    defaults: DEFAULT_MAP,
-    /** DESIGN.md "Generation validity": the criminal must need this many turns to reach an exit. */
-    minEscapeTurns: 6,
-    /** One roadblock never wins. */
-    minCutToExits: 2,
-    minBridges: 2,
-    maxBridges: 3,
-  },
+  map: MAP,
 
   hunter: {
     actionPointsPerTurn: 3,

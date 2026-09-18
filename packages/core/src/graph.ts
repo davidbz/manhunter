@@ -14,7 +14,7 @@
 import type { Balance } from "./balance";
 import type { EdgeId, NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import type { MapEdge, MapGraph, TravelMode } from "./map";
+import type { MapEdge, TravelMode, TraversableGraph } from "./map";
 
 export type Neighbor = {
   readonly nodeId: NodeId;
@@ -25,9 +25,13 @@ export type Neighbor = {
 /**
  * Everything a search needs besides its endpoints. An object rather than positional parameters
  * so that PLAN M3.3 can add standing roadblocks to it without touching every call site.
+ *
+ * `graph` is the structural minimum rather than `MapGraph` (widened in M2.1a): searching needs
+ * node ids and edges, and the map generator has to check connectivity on a topology that has no
+ * districts or exits yet. Every `MapGraph` still satisfies it.
  */
 export type Traversal = {
-  readonly graph: MapGraph;
+  readonly graph: TraversableGraph;
   readonly balance: Balance;
   readonly mode: TravelMode;
   /** Defaults to `LIMITS.maxSearchExpansions`. Overridable so a test can reach the cap. */
@@ -92,7 +96,7 @@ type SearchOutcome = Settled | SearchFailure;
 const UNREACHABLE = { kind: "unreachable" } as const;
 const ZERO_COST = 0;
 
-const nodeIdSet = (graph: MapGraph): ReadonlySet<NodeId> =>
+const nodeIdSet = (graph: TraversableGraph): ReadonlySet<NodeId> =>
   new Set(graph.nodes.map((node) => node.id));
 
 /**

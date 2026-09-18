@@ -93,6 +93,17 @@ export type MapGraph = {
   readonly incidentNodeId: NodeId;
 };
 
+/**
+ * The least a graph search needs: identified nodes, and the edges between them. `MapGraph`
+ * satisfies it, and so does the half-built topology the generator produces before districts and
+ * exits exist (PLAN M2.1a) - which is what lets generation check connectivity with the same
+ * searches the rules use, instead of a second implementation.
+ */
+export type TraversableGraph = {
+  readonly nodes: readonly { readonly id: NodeId }[];
+  readonly edges: readonly MapEdge[];
+};
+
 const ALWAYS_OPEN: ExitSchedule = { kind: "always" };
 
 export const makeNode = (id: NodeId, districtType: DistrictType, position: Position): MapNode => ({
