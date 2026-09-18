@@ -159,7 +159,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `HunterView` has **no `config` member**, because `GameConfig` names the criminal profile, which DESIGN.md hides. The deadline reaches the UI as a derived `turnsRemaining`. **Open consequence for M3.1 and M5.2: `apps/web` cannot build a `GameConfig` without naming a profile.** Either `createGame` takes a profile-free request (difficulty in, profile chosen in `core`), or the UI knows. Decide at M3.1.
   - `RevealFrame` is `{ turn, view, criminalNodeId }` - the plan's "and nothing else", taken literally. If M3.9 finds that the replay cannot explain a decision without the criminal's chosen action, adding `criminalAction` is the one change to make, and it is still not `WorldState`.
   - `Report` keeps `truth` and `accuracy`, and the list of hidden field names is **data** (`HIDDEN_REPORT_FIELDS`), with `HunterReport = Omit<Report, HiddenReportField>` derived from it, so M3.2's redaction and the type it produces cannot drift. `makeReport` takes `observedAtTurn` + `deliveryDelayTurns` (how every producer thinks about lateness) and clamps accuracy into [0, 1].
-  - `ReportContent` has two variants for now, `sighting` and `no_sighting`. Negative evidence is in from the start because M5.1's heatmap prunes with it. Content is structured, never prose: `core` holds no user-facing strings.
+  - `ReportContent` has two variants for now, `sighting` and `no_sighting`. Negative evidence is in from the start because M4.0's heatmap (M5.1 before the review renumbered it) prunes with it. Content is structured, never prose: `core` holds no user-facing strings.
   - `EdgeProperties` (cost per travel mode, blockable) is declared as a shape only. **M1.3 owns the table that fills it.** `ExitSchedule` already has its `timed` variant even though timed exits are M6, so adding one is an entry rather than a type change.
   - `casualties` lives on `WorldState`, not `HunterState`: it is a fact about the world that both the end conditions (M3.8c) and the score (M3.10) read.
   - `MapConfig` (`columns`, `rows`, `exitCount`) lives in `config.ts` beside `GameConfig`; **M2.1a may extend it** rather than inventing a second generator config.
@@ -218,7 +218,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - **Cutting a set is cutting one merged sink.** The search stops at the first target it reaches and never routes flow through one, so `minCut(start, exits)` is the DESIGN.md rule directly. Cutting a node from itself is `not_separable`, a third result variant next to `cut` and the shared `expansion_limit_exceeded`; an empty target set cuts at no cost.
   - Split as the task asked: `findAugmentingPath` (breadth-first, which is the Edmonds–Karp part) is separate from the flow loop, and both sit well under the complexity ceiling with it left at 10.
   - The flow loop is bounded by the capacity leaving the source, which unit capacities make an exact bound on the number of augmentations - no arbitrary cap, no `while (true)`. Search itself is bounded by `LIMITS.maxSearchExpansions`, shared with M1.4a and spent across all the augmentations of one call, with the same over-the-limit test at the real constant (chain of `maxSearchExpansions + 1` nodes cuts, one node longer reports the cap).
-  - **`GraphLogic` gained `adjacency(traversal)`**, every node's neighbours in one pass. Needed, not tidying: `neighbors` rebuilds the whole adjacency per lookup, so building the residual node by node would have cost O(nodes × edges) *before* any bounded search, which is exactly the hang the bound exists to prevent. M5.1's belief spread wants the same map.
+  - **`GraphLogic` gained `adjacency(traversal)`**, every node's neighbours in one pass. Needed, not tidying: `neighbors` rebuilds the whole adjacency per lookup, so building the residual node by node would have cost O(nodes × edges) *before* any bounded search, which is exactly the hang the bound exists to prevent. M4.0's belief spread (M5.1 before the review renumbered it) wants the same map.
   - Tested against an independent oracle, not just against itself: a property test brute-forces the smallest cut by enumerating every division of small random graphs and compares. Plus symmetry (cutting a from b equals cutting b from a) and a Menger cross-check against M1.4a's `reachable` (a cut is needed exactly when a route exists).
   - Verified by mutation: not consuming forward capacity, running the flow loop once, neutralising the expansion cap, collapsing parallel edges and dropping the source-in-targets guard each fail tests. One mutant survives, deliberately: dropping the `+1` on the reverse arc. In the undirected two-arc model the opposite direction already carries the cancellation, and 300k random graphs (4-13 nodes) found no case where it changes the answer. The standard form is kept because it is the correct general one, not because a test forces it.
   - `bun run verify` passes; 144 tests, `mincut.ts` at 100% statements and 96% branches. Lint still prints the two pre-existing `useLiteralKeys` infos (Inbox); unrelated.
@@ -267,22 +267,25 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `bun run verify` passes; 188 tests. Lint still prints the two pre-existing `useLiteralKeys` infos (Inbox); unrelated.
 
 - [ ] **M2.1c District types, exits, start**
-  deps: M2.1b
+  deps: M2.1b, M1.3, M1.4a
   District types by region, 3 exits on the edge of the map, criminal start near centre.
-  Pure labelling over a finished topology: it adds no edges and removes none, which is what makes it separately testable.
-  AC: every node has a `districtType`; exits sit on the border and the start does not; same seed ⇒ identical assignment.
+  Pure labelling over a finished topology: it adds no edges and removes none, which is what makes it separately testable. This is the task that turns a `MapTopology` into a `MapGraph` (M2.1a's note).
+  M1.3 and M1.4a added to deps in review, for the same reason M1.3 was added to M2.1a: the district mix and `exitCount` are `balance.map` knobs, and M2.1a's note requires biasing exit placement toward border nodes **far from the start on foot**, which is `GraphLogic.shortestPathToAny` against `balance.map.minEscapeTurns`. Without that bias, uniform placement over border nodes passes M2.2's escape-distance rule only about 70% of the time.
+  Each `Exit` also needs an `ExitKind` (`airport | port | border | highway`), which the original AC omitted and `makeExit` requires. Kinds are drawn from the seed; `ExitSchedule` stays `always` until M6's timed exits.
+  AC: every node has a `districtType`; exits sit on the border and the start does not; every exit carries a kind; same seed ⇒ identical assignment.
 
 - [ ] **M2.2 Validator**
   deps: M2.1c, M1.4b, M1.3
   Implement every rule in DESIGN.md "Generation validity". Return a list of violations, not a boolean.
   Needs min-cut (M1.4b) for the "min-cut between start and exits ≥ 2" rule, and M1.3 for `MIN_ESCAPE_TURNS`, which is the threshold the shortest-path rule compares against.
-  Two rules were underspecified and are now decided below: the escape-distance rule is measured **on foot**, and "a chokepoint that matters" means **an edge whose removal strictly increases the shortest start-to-nearest-exit cost**. Implement those readings; do not reinterpret them mid-task.
-  AC: unit tests with hand-built invalid maps hit each rule.
+  Two rules were underspecified and are now decided below: the escape-distance rule is measured **on foot**, and "a chokepoint that matters" means **a `bridge` or `tunnel` edge whose removal strictly increases the shortest start-to-nearest-exit cost**. Implement those readings; do not reinterpret them mid-task. The edge-kind half is load-bearing - without it the rule passes almost every map - and it makes a riverless city a violation rather than a valid map, which is the answer to the small-grid question that used to sit in the Inbox.
+  AC: unit tests with hand-built invalid maps hit each rule, including a bridgeless map failing the chokepoint rule.
 
 - [ ] **M2.3 Generate-until-valid**
   deps: M2.2
   Wrapper that regenerates with derived seeds; cap attempts and throw with the last violations.
-  AC: property test over seeds: every returned map passes the validator. Put the run count in a named constant rather than `fc`'s default, and state what the full run costs in wall-clock in the task note. Generate-until-valid runs the validator, which runs min-cut, so this is the first test in the repo that can plausibly be slow; if it exceeds a few seconds, lower the count deliberately and say so instead of leaving it in the default suite.
+  A config that can never produce a valid map must **fail with the last violations named**, not loop quietly to the cap: a grid under 4 cells across can never carry a river (M2.1b's `MIN_BANK`), so it can never satisfy M2.2's chokepoint rule, and the error has to say so.
+  AC: property test over seeds: every returned map passes the validator; an impossible config (a 3-column grid) reports the chokepoint violation rather than a bare "gave up". Put the run count in a named constant rather than `fc`'s default, and state what the full run costs in wall-clock in the task note. Generate-until-valid runs the validator, which runs min-cut, so this is the first test in the repo that can plausibly be slow; if it exceeds a few seconds, lower the count deliberately and say so instead of leaving it in the default suite.
 
 - [ ] **M2.4 Map debug export**
   deps: M2.3
@@ -298,15 +301,17 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 - [ ] **M3.1 Game init**
   deps: M2.3, M1.3
   `createGame(setup, seed) => SealedWorld`.
-  **Resolves M1.2's open consequence.** `GameConfig` names the criminal profile, which DESIGN.md hides from the player, so `apps/web` cannot construct one. Split the type: `GameSetup` is the player-visible half (map size, start hour, deadline, difficulty) and is what `web`, `sim` and the replay string pass in; `GameConfig` stays the complete resolved form and lives inside `WorldState`. `createGame` derives the criminal profile from `setup` plus a forked RNG stream, so the same seed always yields the same profile and the replay never stores it - which is also why a shared link cannot spoil the hunt it replays.
+  **Resolves M1.2's open consequence.** `GameConfig` names the criminal profile, which DESIGN.md hides from the player, so `apps/web` cannot construct one. Split the type: `GameSetup` is the player-visible half (map size, deadline, difficulty) and is what `web`, `sim` and the replay string pass in; `GameConfig` stays the complete resolved form and lives inside `WorldState`. `createGame` derives the criminal profile from `setup` plus a forked RNG stream, so the same seed always yields the same profile and the replay never stores it - which is also why a shared link cannot spoil the hunt it replays.
+  **The start hour is derived the same way and is not in `GameSetup`** (see "Decisions"): DESIGN.md says a hunt starts at a random time of day, so it is a draw off the seed, not a player choice. `GameConfig.startHour` is the resolved form and stays.
   **Seals the world, per architecture rule 4.** Declare `SealedWorld` in `core`: a branded alias of `WorldState` with no readable members, plus internal `seal`/`unseal` that `core` alone calls. `core` exports its game functions over `SealedWorld` (`toHunterView`, `step`, reveal frames), so M5.2 has a legal way to hold a game between turns. `WorldState` stays exported for `sim`, which is a balance tool with no hidden-information concern; `web` is held to the sealed form by the existing `biome.json` deny list.
   Add `GameConfig` to that deny list and a fixture to `tools/biome/architecture-rules.test.ts`, exactly as M1.2 did for `Report`.
-  AC: deterministic; initial meters within bounds; the same seed picks the same profile; a type-level test asserts `SealedWorld` exposes no members.
+  AC: deterministic; initial meters within bounds; the same seed picks the same profile **and the same start hour**; a type-level test asserts `SealedWorld` exposes no members.
 
 - [ ] **M3.2 Hunter view**
   deps: M3.1
   `toHunterView(world) => HunterView`. Excludes criminal position, profile, and hidden report fields.
-  AC: the shape assertions in `view.test.ts` (no `criminal`, `config` or `rng` member) stay compile-time checks, plus a property test over generated worlds asserting that every report in the view has no `truth`/`accuracy`, and that no report with `receivedAtTurn` after `clock.turn` appears at all.
+  **Also redacts the event feed, which the first draft of this task missed.** `GameEvent`'s `eyewitness` and `prank_call` variants both carry a `reportId`, so an unredacted feed names which report is a prank and undoes the whole point of hiding `truth` (see "Decisions"). Declare `HunterEvent` in `view.ts`, collapsing those two into one `report_arrived { turn, reportId }`, derive it from a **data** list of hidden variants the way `HunterReport` is derived from `HIDDEN_REPORT_FIELDS`, and change `HunterView.events` to `readonly HunterEvent[]`.
+  AC: the shape assertions in `view.test.ts` (no `criminal`, `config` or `rng` member) stay compile-time checks, plus a property test over generated worlds asserting that every report in the view has no `truth`/`accuracy`, that no report with `receivedAtTurn` after `clock.turn` appears at all, and that no event in the view distinguishes a prank from a sighting. Verify the last one by mutation: putting `prank_call` back into the view must fail it.
   **Do not write "the view contains no node id the criminal has stood on"**, which is the original wording and is false by design: `MapGraph.incidentNodeId` is the crime scene and `civilian_hurt` carries a location, both of which the hunter is meant to see (M1.2's notes). The test asserts the shape, never scans for ids.
 
 - [ ] **M3.3 Action framework + roadblock**
@@ -332,7 +337,9 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 - [ ] **M3.7 Event system**
   deps: M3.6
   Data-driven events (trigger, weight, apply). Implement: eyewitness, prank call, civilian hurt, nightfall, rush hour.
-  AC: each event unit-tested; events only fire when triggers hold.
+  **Split before starting** (see Inbox): the table plus trigger and weight machinery with two events is one session, the remaining three is another.
+  New events may carry hidden information in `GameEvent` but must declare it to M3.2's projection: an event whose presence reveals a report's `truth`, or the criminal's position beyond what DESIGN.md confirms, belongs on the hidden-variant list, not in `HunterView`.
+  AC: each event unit-tested; events only fire when triggers hold; every `GameEvent` variant is either in `HunterEvent` or on the hidden list, asserted exhaustively so a new variant cannot default into the view.
 
 - [ ] **M3.8a `step` skeleton: intel, events, consequences**
   deps: M3.4, M3.6, M3.7
@@ -344,7 +351,9 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 - [ ] **M3.8b Planning and simultaneous resolution**
   deps: M3.8a, M3.3, M3.5
   Fill in the two stubbed phases: planning spends AP on the queued hunter actions, resolution asks the criminal AI for its move and resolves both sides at once. Every interaction rule lives here - roadblock hit, slip past, capture on the same node - and this is the only phase where the order of the two sides could bias the outcome, so the tests are about simultaneity, not just effects.
-  AC: a hunter action and a criminal move that target the same edge resolve the same way regardless of evaluation order; a criminal moving into a roadblocked edge is stopped; capture is detected when both sides occupy one node.
+  **Split before starting** (see Inbox): AP spend and queue validation is one session, simultaneous resolution plus every interaction rule is another. This task has the shape M3.8 was already split for once.
+  **Owns `GameOutcome.captured.alive`**, decided in review: `balance.score.capturedAliveBonus` exists because DESIGN.md lists the component, but nothing produced the flag, and M3.10 sits downstream of M3.8c so it could not add it. Capture resolution sets it here.
+  AC: a hunter action and a criminal move that target the same edge resolve the same way regardless of evaluation order; a criminal moving into a roadblocked edge is stopped; capture is detected when both sides occupy one node and carries whether it was alive.
 
 - [ ] **M3.8c End conditions and determinism**
   deps: M3.8b
@@ -364,21 +373,31 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   deps: M3.8c, M1.3
   Score a finished game per DESIGN.md "End conditions": turns taken, budget spent, civilian harm, trust remaining, captured alive. Pure function from a finished world to a typed breakdown; weights live in `balance.ts`.
   Added in review: DESIGN.md specifies a score and M5.6a renders a "score breakdown", but nothing in the plan computed one.
+  `capturedAliveBonus` reads `GameOutcome.captured.alive`, which **M3.8b** now produces. Do not re-litigate the knob; it has data behind it.
   AC: unit tests pin the breakdown for two hand-built finished games; the breakdown is serializable and carries its components, not just a total.
 
 ---
 
 ## M4 — Headless simulation and balance
 
-- [ ] **M4.1 Scripted hunter bots**
+- [ ] **M4.0 Belief heatmap (core)**
   deps: M3.8c, M3.2
-  `random`, `greedy-roadblock` (block edges on the shortest path to nearest exit), `heatmap-chaser` (placeholder until M5.1).
+  Compute probability over nodes from `HunterView` history per DESIGN.md.
+  M3.2 added to deps in review: the input is a sequence of hunter views, and `toHunterView` is what produces one.
+  Renumbered from M5.1 in review and **moved ahead of M4.1**. It is a pure `core` module with no UI dependency, and it was the reason M4.1's `heatmap-chaser` was "a placeholder until M5.1" - which would have had M4.3 tune `balance.ts` against a bot that then changed. M5.3b consumes it; it does not live in M5.
+  `GraphLogic.adjacency` is the seam to spread mass over (M1.4b's note).
+  AC: mass sums to 1 within a named tolerance; negative evidence reduces mass on searched nodes; confirmed sighting concentrates mass.
+
+- [ ] **M4.1 Scripted hunter bots**
+  deps: M3.8c, M3.2, M4.0
+  `random`, `greedy-roadblock` (block edges on the shortest path to nearest exit), `heatmap-chaser` (over M4.0's real distribution, not a placeholder).
   AC: bots only use `HunterView`.
 
 - [ ] **M4.2 Sim CLI**
   deps: M4.1
   `bun run sim -- --games N --bot X --profile Y --seed S [--out dir]`. Outputs escape rate, capture rate, avg turns, loss reasons, and the worst/best seeds.
-  AC: runs 1,000 games in reasonable time; JSON + human-readable output.
+  **Split before starting** (see Inbox): the batch runner and its aggregation is one session, the CLI surface is another. The CLI half owns a real I/O boundary - AGENTS.md section 5 makes argv bounded input, so `--games` is checked against `LIMITS.maxGamesPerRun` before anything is allocated, with the over-the-limit test - and it reuses M2.4's bounded write helper rather than writing its own.
+  AC: runs 1,000 games in reasonable time; JSON + human-readable output; `--games` one over the limit is an error result, not a clamp.
 
 - [ ] **M4.3 Balance targets**
   deps: M4.2
@@ -390,11 +409,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ## M5 — Web UI (dispatch style)
 
-- [ ] **M5.1 Belief heatmap (core)**
-  deps: M3.8c, M3.2
-  Compute probability over nodes from `HunterView` history per DESIGN.md.
-  M3.2 added to deps in review: the input is a sequence of hunter views, and `toHunterView` is what produces one.
-  AC: mass sums to 1; negative evidence reduces mass on searched nodes; confirmed sighting concentrates mass.
+Playwright covers **M5.5's turn flow and M5.6a's finish, and nothing else** ("Decisions"): AGENTS.md limits e2e to critical flows, so every other assertion here runs under the jsdom environment M5.2 installs.
 
 - [ ] **M5.2 Game store**
   deps: M3.8c, M3.1
@@ -408,12 +423,12 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   deps: M5.2
   `MapRenderer` component: nodes, typed edges, exits, roadblocks, selection. Everything the map is made of, drawn from `HunterView`, with no overlay.
   Split out of M5.3 in review: the base map and the belief overlay have different inputs, different dependencies and different failure modes, and together they were the largest UI task in the plan. The `MapRenderer` seam AGENTS.md names (PixiJS may replace it later) is defined here.
-  AC: Playwright: clicking a node selects it; node count and edge count match the view.
+  AC: under jsdom, clicking a node selects it, and node count and edge count match the view. Not Playwright ("Decisions"): this is a rendering assertion, not a critical flow.
 
 - [ ] **M5.3b Heatmap overlay**
-  deps: M5.3a, M5.1
+  deps: M5.3a, M4.0
   The belief distribution drawn over the base map, behind the nodes and edges.
-  M5.1 is the dep that matters: the overlay has nothing to draw without the distribution. Do not snapshot-test the SVG (AGENTS.md "Testing expectations"); assert on the mapping from probability to the rendered attribute instead.
+  M4.0 is the dep that matters: the overlay has nothing to draw without the distribution. Do not snapshot-test the SVG (AGENTS.md "Testing expectations"); assert on the mapping from probability to the rendered attribute instead, under jsdom.
   AC: a node with zero belief renders no heat; the highest-belief node renders the strongest; the overlay does not intercept clicks meant for nodes.
 
 - [ ] **M5.4 Report feed + meters**
@@ -425,20 +440,22 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 - [ ] **M5.5 Action panel + end turn**
   deps: M5.3b, M5.4
   Choose action, pick target on map, queue, end turn. Validation errors shown inline.
-  AC: Playwright: start game → roadblock → end turn → turn counter advances.
+  **Split before starting** (see Inbox): the action panel and target selection is one session, queueing and ending the turn is another.
+  AC: Playwright: start game → roadblock → end turn → turn counter advances. This is one of the two flows Playwright keeps.
 
 - [ ] **M5.6a End screen**
   deps: M3.10, M5.5
   The screen a finished hunt lands on: outcome and the M3.10 score breakdown, component by component rather than one number.
   Split out of M5.6 in review: the end screen needs scoring, the replay viewer needs the replay format and the overlay, and the share link is the only part of the three that crosses an I/O boundary.
-  AC: Playwright: finish a seeded game and see the breakdown; every score component the breakdown carries is rendered, so adding one to `balance.ts` cannot silently go missing.
+  AC: Playwright: finish a seeded game and see the breakdown - the second of the two flows Playwright keeps. That every score component the breakdown carries is rendered, so adding one to `balance.ts` cannot silently go missing, is asserted under jsdom, where it is exhaustive and cheap.
 
 - [ ] **M5.6b Replay viewer and share link**
   deps: M5.6a, M3.9, M5.3b
   Replay scrubber showing the criminal's true path over the heatmap, from `RevealFrame`s; shareable replay link that round-trips through the URL.
   This task owns the **URL boundary** in `web`, and `apps/web/src/limits.ts` already holds its bound: reject anything longer than `LIMITS.maxReplayStringLength` before decoding, not after. M3.9 bounds the same string on the `core` side; both need the over-the-limit test, because they are two different boundaries (a hostile URL versus a malformed replay).
   The scrubber renders `RevealFrame`s and never `WorldState` (architecture rule 4). `M5.3b`'s overlay is the dep that makes "true path over the heatmap" mean anything.
-  AC: Playwright: finish a seeded game, open the replay, scrub to a turn and see the criminal's position for it; a URL one character over the limit is rejected with an error, not truncated or parsed.
+  **Split before starting** (see Inbox): the scrubber is one session, the share link and its URL boundary is another.
+  AC: under jsdom, scrubbing to a turn shows the criminal's position for it; a URL one character over the limit is rejected with an error, not truncated or parsed. Not Playwright - the two e2e flows are M5.5's turn and M5.6a's finish.
 
 - [ ] **M5.7 Visual pass**
   deps: M5.6b
@@ -472,8 +489,18 @@ Each entry blocks a named task. Decide before that task starts, not during it. R
 - **How the UI holds a game between turns.** M5.2 said "a store holding `WorldState` privately", which architecture rule 4 forbids and `biome.json` blocks by name. Resolution: `SealedWorld`, an opaque branded alias of `WorldState` with no readable members, declared in M3.1. The store keeps data and hands it back to `core`; it never reads it and never becomes logic. Sealing is a type-level guarantee, not encryption - the bytes survive `JSON.stringify` because replays need them to - and that limit is written into AGENTS.md rule 4.
 - **Config versus setup.** `GameConfig` names the criminal profile, which DESIGN.md hides, so `web` could not build one. M3.1 splits `GameSetup` (player-visible, goes in the replay string) from the resolved `GameConfig` (stays in `WorldState`), and derives the profile from the seed. A shared replay link therefore does not spoil the hunt it replays.
 
+- **`GameEvent` leaks which report is a prank, and `HunterView` needs an event projection.** `events.ts` gives `eyewitness` and `prank_call` a `reportId`, and `HunterView.events` is the unredacted `GameEvent[]`. A `prank_call` event therefore names exactly which report is a prank - the one thing `HIDDEN_REPORT_FIELDS` and `HunterReport` exist to hide. Neither `view.test.ts`'s shape checks nor M3.2's stated AC ("every report in the view has no `truth`/`accuracy`") would catch it, so it would have shipped. Resolution: declare `HunterEvent` in `view.ts` beside `HunterReport`, collapsing both variants into one `report_arrived { turn, reportId }`; `HunterView.events` becomes `readonly HunterEvent[]`. The feed still learns that a report landed, which is what M5.4 needs, and stops learning what kind it was. DESIGN.md's "Reports" section now states the rule. The hidden-variant list is **data**, the way `HIDDEN_REPORT_FIELDS` is, so the projection and its type cannot drift. Blocks M3.2; M3.7 must not add an event that names a report's nature.
+
+- **Where the start hour comes from.** Derived from the seed, and **not** a member of `GameSetup`. DESIGN.md says a hunt "starts at a random time of day"; M3.1's first draft listed start hour in the player-visible setup, which would make it a player choice and put it in every replay string. Deriving it costs nothing, keeps the string shorter, and leaves one fewer field for `web`, `sim` and the replay codec to agree on. `GameConfig.startHour` stays - that is the resolved form. Blocks M3.1.
+
+- **Whether a capture was alive.** `GameOutcome`'s `captured` variant gains `alive: boolean`, set by **M3.8b**'s capture resolution. `balance.ts` carries `score.capturedAliveBonus` because DESIGN.md lists the component, but nothing produced the flag, and M3.10 (which reads it) depends on M3.8c - so the type change would have had to land upstream of the task that discovered it was needed. Decided here instead. M3.10 renders the bonus; it does not invent the data.
+
+- **How much of M5 is Playwright's.** AGENTS.md is explicit: "`web` gets Playwright tests only for critical flows (start game, take a turn, reach an end screen)." Five M5 ACs contradicted it by naming Playwright for node selection, score-component rendering, overlay hit-testing and replay scrubbing. Resolution: **Playwright owns exactly M5.5's turn flow and M5.6a's finish**; M5.3a, M5.3b, M5.4 and M5.6b's scrubber assert under the jsdom environment M5.2 installs. The ACs below are reworded. This is also the cheaper split - a jsdom assertion on the mapping from probability to a rendered attribute is a unit test, and AGENTS.md separately forbids snapshot-testing the SVG.
+
 - **Which travel mode `minEscapeTurns` is measured in.** **Foot.** DESIGN.md's rule ("shortest start-to-nearest-exit path >= `MIN_ESCAPE_TURNS`") never named a mode, and `Traversal` requires one (M1.4a). The choice decides whether M2 works at all: `balance.edges.road.costByMode` is `car: 1`, `foot: 2`, and a centre start on the default 8x6 grid is at most 7 grid steps from any border cell, so by car the nearest of three border exits is 3-5 turns, below the threshold of 6, and *every* generated map would fail M2.2 until M2.3 exhausted `LIMITS.maxMapGenerationAttempts` and threw. On foot the same map is 6-10 and passes. Foot is also the criminal's guaranteed mode in the MVP - stealing a vehicle is M6 - so it is the honest floor on how long escape takes. Blocks M2.2.
-- **What "a chokepoint that matters" means.** An edge whose removal strictly increases the shortest start-to-nearest-exit cost. DESIGN.md's "at least one chokepoint (bridge or tunnel) exists that matters" admitted at least three readings (a bridge merely existing, an edge on every shortest path, a cut edge); this one is cheap to compute with M1.4a's `shortestPathToAny` and is the property the design actually cares about - a chokepoint the criminal can route around costs nothing to hold. Blocks M2.2.
+- **What "a chokepoint that matters" means.** A `bridge` or `tunnel` edge whose removal strictly increases the shortest start-to-nearest-exit cost. DESIGN.md's "at least one chokepoint (bridge or tunnel) exists that matters" admitted at least three readings (a bridge merely existing, an edge on every shortest path, a cut edge); "removal raises the cost" is cheap to compute with M1.4a's `shortestPathToAny` and is the property the design actually cares about - a chokepoint the criminal can route around costs nothing to hold.
+  **The edge-kind restriction is part of the rule, not decoration.** An earlier draft of this entry dropped it, which makes the rule near-vacuous: almost every map has *some* edge on a unique shortest path, so the validator would pass everything. Restricting it to bridges and tunnels is what ties the rule to the chokepoint M2.1b builds. DESIGN.md has been reworded to state both halves.
+  **Consequence, which also settles the riverless-map question below.** No generator emits `tunnel`, and M2.1b can refuse a course (`river_not_bridgeable`), so a riverless city satisfies no reading of this rule and is **invalid - regenerate, never accept**. M2.1b measured refusals at 3.5% of courses, so this costs roughly one extra attempt per 30 maps against `LIMITS.maxMapGenerationAttempts` of 64. The one case it does not absorb is a grid under 4 cells across, which `MIN_BANK = 2` means can *never* carry a river: such a config exhausts the cap every time, and **M2.3 must fail with the violation named** rather than looping quietly. `BALANCE.map.defaults` is 8x6, so no MVP map is affected. Blocks M2.2.
 - **Footpath placement.** M2.1a emits a named fraction of surviving road edges as `footpath` instead. M1.3's note calls footpath non-blockability load-bearing ("leaving one edge kind open on foot is what stops a single well-placed block from ending the hunt"), but no task in M2 created one: M2.1a made roads, M2.1b converted some to bridges, M2.1c added no edges, so every MVP map would have been fully blockable. The fraction is a `balance.map` knob. Blocks M2.1a.
 
 - **Score model.** Decided at M1.3, as planned. Capture scores a base of 1200; turns taken, budget spent and casualties subtract; trust remaining and a live capture add. The invariant M3.10 and M4.3 must preserve is that the worst possible capture outscores the best possible loss, which `balance.test.ts` asserts from the constants themselves.
@@ -497,9 +524,10 @@ Agents add discovered out-of-scope work here.
 - `tools/` in the working tree also contains an unrelated, untracked `fetch_agent_tools.sh` from local tooling. Decide whether it belongs in the repo before `tools/` is committed.
 - AGENTS.md's command table should say that `bun test` (Bun's own runner) is not `bun run test` (Vitest). The two disagree on config, environment and assertion library, and the former silently half-runs the suite.
 - Coverage is generated for `core` but has no thresholds, so it can rot silently. Consider `coverage.thresholds` once `core` has real modules (after M1.2), tuned to whatever M1 actually reaches rather than an aspirational number.
-- From the pre-M2 plan review, raised but not decided. Each is a plan edit, not code: **M3.8b is two tasks** (planning/AP spend, then simultaneous resolution plus every interaction rule) and has the same shape as the split M3.8 already went through once; **M5.5 and M5.6b** are likewise two checkboxes' worth each. **M2.4's AC** ("`sim` can write `map-<seed>.svg`") implies argv parsing, but M4.2 owns the CLI and AGENTS.md section 5 makes CLI arguments a bounded boundary - narrow M2.4 to the SVG builder plus the bounded write helper, tested directly, and let M4.2 wire the flag.
-- The definition of done says `bun run verify` passes "with zero warnings", but it has printed two `useLiteralKeys` infos on every run since M0.4 (see below), so every task technically fails its own DoD. Either close that item or restate the bar as "no errors and no new diagnostics".
+- **Four tasks are marked "split before starting" rather than split now** (pre-M2 review, confirmed in the pre-M2.1c review): **M3.8b** (AP spend, then simultaneous resolution), **M3.7** (event machinery, then the remaining events), **M4.2** (batch runner, then the CLI surface), **M5.5** and **M5.6b** (two checkboxes each). Deliberately deferred: M3.8 was split twice because the first split happened before its dependencies existed, and each of these is four or more milestones out. The flag is in each task body, so whoever picks one up cannot miss it.
+- **M2.4's AC** ("`sim` can write `map-<seed>.svg`") implies argv parsing, but M4.2 owns the CLI and AGENTS.md section 5 makes CLI arguments a bounded boundary - narrow M2.4 to the SVG builder plus the bounded write helper, tested directly, and let M4.2 wire the flag. Still open; decide when M2.4 starts.
+- ~~The definition of done says `bun run verify` passes "with zero warnings", but it has printed two `useLiteralKeys` infos on every run since M0.4, so every task technically fails its own DoD.~~ **Resolved** in the pre-M2.1c review, together with the item below: `useLiteralKeys` is now `off` for `**/*.test.ts` in `biome.json`. The DoD stands as written and `bun run lint` prints nothing.
 - `LIMITS.maxMapGenerationAttempts` is still the untuned 64 from M0.2. M2.3 is the task that can measure the real rejection rate; it should tune it rather than inherit the placeholder.
 - `noExcessiveCognitiveComplexity` (max 10) will likely trip on M2.1b's river cut and M2.2's multi-rule validator. The M1.4b precedent is to split the function, not raise the ceiling and not disable per file.
-- `bun run lint` exits 0 but prints two `lint/complexity/useLiteralKeys` infos on `tools/biome/architecture-rules.test.ts`. Biome wants `counted.changed`; `noPropertyAccessFromIndexSignature` in `tsconfig.base.json` wants `counted["changed"]`. The two rules disagree on index-signature reads. Decide which one yields (narrow the value's type at the boundary so neither fires, or turn `useLiteralKeys` off for `**/*.test.ts`). Noticed during M0.4; pre-existing, not caused by it.
-- M2.1b's `MIN_BANK = 2` means a grid under 4 cells across gets no river at all (`river_not_bridgeable` with zero crossings), and a grid exactly 4–5 across gets a nearly straight one. `BALANCE.map.defaults` is 8x6 so the MVP is unaffected, but M2.2's validator and any future small-map preset need to agree on whether a riverless city is valid or a regeneration. Decide when M2.2 writes the chokepoint rule.
+- ~~`bun run lint` exits 0 but prints two `lint/complexity/useLiteralKeys` infos on `tools/biome/architecture-rules.test.ts`. Biome wants `counted.changed`; `noPropertyAccessFromIndexSignature` in `tsconfig.base.json` wants `counted["changed"]`.~~ **Resolved:** `useLiteralKeys` is off for `**/*.test.ts`. The tsc rule is type-aware and load-bearing, Biome's is style, so style yielded, scoped to the files where the two can disagree.
+- ~~M2.1b's `MIN_BANK = 2` means a grid under 4 cells across gets no river at all, and M2.2 needs to agree on whether a riverless city is valid or a regeneration.~~ **Resolved** in the pre-M2.1c review, by the chokepoint decision above: a riverless city has no bridge and no tunnel, so it fails the chokepoint rule and is regenerated. A grid under 4 cells across therefore has no valid map at all, and M2.3 must fail naming the violation rather than looping to its cap.
