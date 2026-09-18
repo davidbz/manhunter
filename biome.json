@@ -127,7 +127,14 @@
               "options": {
                 "paths": {
                   "@manhunter/core": {
-                    "importNames": ["WorldState", "CriminalState", "CriminalKnowledge", "Report"],
+                    "importNames": [
+                      "WorldState",
+                      "CriminalState",
+                      "CriminalKnowledge",
+                      "Report",
+                      "GameConfig",
+                      "unseal"
+                    ],
                     "message": "apps/web only ever receives HunterView. Hidden state stays in core (architecture rule 4)."
                   }
                 }

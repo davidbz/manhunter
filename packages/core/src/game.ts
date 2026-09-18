@@ -1,5 +1,6 @@
 /**
- * Starting a hunt (PLAN M3.1a): a player-visible `GameSetup` plus a seed becomes a `WorldState`.
+ * Starting a hunt: a player-visible `GameSetup` plus a seed becomes a `SealedWorld` - the world
+ * the caller may hold between turns but not read (architecture rule 4, `sealed.ts`).
  *
  * Two of the config's fields are deliberately not the player's to choose. DESIGN.md hides the
  * criminal's profile and starts the hunt "at a random time of day", so both are drawn off the
@@ -20,8 +21,9 @@ import type { NodeId } from "./ids";
 import { LIMITS } from "./limits";
 import type { TravelMode } from "./map";
 import type { Rng, RngState } from "./rng";
+import { type SealedWorld, seal } from "./sealed";
 import { HOURS_PER_DAY, type Hour, makeClock, type Turn } from "./time";
-import { makeWorldState, type WorldState } from "./world";
+import { makeWorldState } from "./world";
 
 export type GameRequest = {
   readonly setup: GameSetup;
@@ -37,7 +39,7 @@ export type GameRequest = {
  * answers and the caller has to tell them apart.
  */
 export type GameResult =
-  | { readonly kind: "game"; readonly world: WorldState }
+  | { readonly kind: "game"; readonly world: SealedWorld }
   | {
       readonly kind: "deadline_too_long";
       readonly requestedTurns: Turn;
@@ -144,14 +146,20 @@ export const createGameLogic = ({ rng, generation }: GameDeps): GameLogic => ({
 
     return {
       kind: "game",
-      world: makeWorldState({
-        config,
-        rng: rng.fork(root, STREAM.play),
-        clock: makeClock(config.startHour, FIRST_TURN),
-        map: generated.graph,
-        hunter: startingHunter(balance),
-        criminal: startingCriminal(balance, config.criminalProfile, generated.graph.incidentNodeId),
-      }),
+      world: seal(
+        makeWorldState({
+          config,
+          rng: rng.fork(root, STREAM.play),
+          clock: makeClock(config.startHour, FIRST_TURN),
+          map: generated.graph,
+          hunter: startingHunter(balance),
+          criminal: startingCriminal(
+            balance,
+            config.criminalProfile,
+            generated.graph.incidentNodeId,
+          ),
+        }),
+      ),
     };
   },
 });

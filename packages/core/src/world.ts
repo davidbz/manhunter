@@ -1,6 +1,7 @@
 /**
  * The whole truth about a game in progress. `WorldState` is the only place the criminal's
- * position lives, and it never leaves `core`: the UI receives `HunterView` (architecture rule 4).
+ * position lives, and it is never readable outside `core`: the UI receives `HunterView` to draw
+ * and a `SealedWorld` to hand back (`sealed.ts`, architecture rule 4).
  *
  * It is plain data throughout, so `JSON.parse(JSON.stringify(world))` round-trips it
  * (architecture rule 3). That includes the RNG position, which travels with the world rather

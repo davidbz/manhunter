@@ -108,6 +108,28 @@ const VIOLATIONS: readonly Violation[] = [
     },
   },
   {
+    id: "web_game_config",
+    rule: "rule 4 (hidden information): web importing GameConfig, which names the profile",
+    dir: WEB_DIR,
+    source:
+      'import type { GameConfig } from "@manhunter/core";\n\nexport const profile = (c: GameConfig): string => c.criminalProfile;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
+    id: "web_unseal",
+    rule: "rule 4 (hidden information): web unsealing a world it may only hold",
+    dir: WEB_DIR,
+    source:
+      'import { type SealedWorld, unseal } from "@manhunter/core";\n\nexport const peek = (w: SealedWorld): number => unseal(w).casualties;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
     id: "sim_class",
     rule: "no classes (AGENTS.md code style), outside core too",
     dir: SIM_DIR,
