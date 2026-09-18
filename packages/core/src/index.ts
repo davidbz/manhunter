@@ -13,6 +13,8 @@ export type {
   CriminalState,
 } from "./criminal";
 export { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
+export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
+export { createDistrictLogic } from "./districts";
 export type { GameEvent, GameEventKind } from "./events";
 export type {
   Adjacency,
@@ -43,6 +45,7 @@ export type {
   MapNode,
   Position,
   RailEdge,
+  River,
   RoadEdge,
   TravelCost,
   TravelMode,
@@ -71,7 +74,6 @@ export { makeClock } from "./time";
 export type {
   GridCell,
   MapTopology,
-  River,
   TopologyLogic,
   TopologyNode,
   TopologyRequest,

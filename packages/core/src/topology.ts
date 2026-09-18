@@ -16,7 +16,7 @@ import type { MapConfig } from "./config";
 import type { GraphLogic, Traversal } from "./graph";
 import { type EdgeId, makeEdgeId, makeNodeId, type NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import { type MapEdge, makeEdge, type Position, type TravelMode } from "./map";
+import { type MapEdge, makeEdge, type Position, type River, type TravelMode } from "./map";
 import type { Rng, RngState } from "./rng";
 
 /** Which cell of the generating grid a node came from. Zero-based, column-major in `x`. */
@@ -37,20 +37,29 @@ export type TopologyNode = {
   readonly position: Position;
 };
 
-/**
- * Where the river runs, in layout coordinates, or `null` before M2.1b carves one. Presentation
- * only: once generation finishes, everything the river does to the rules is already expressed in
- * which edges exist and which of them are bridges. M2.4 and M5.3a draw it; no rule reads it.
- */
-export type River = {
-  readonly points: readonly Position[];
-};
-
+/** `river` is `null` until M2.1b carves one. The type lives in `map.ts`, where `MapGraph` needs it too. */
 export type MapTopology = {
   readonly nodes: readonly TopologyNode[];
   readonly edges: readonly MapEdge[];
   readonly river: River | null;
 };
+
+/** How many cells a set of nodes covers. Zero on an empty set. */
+export type GridExtent = {
+  readonly columns: number;
+  readonly rows: number;
+};
+
+/**
+ * The grid a finished topology came from, recovered from its cells. Both consumers of a topology
+ * need it - M2.1b to tell one bank from the other, M2.1c to tell a border node from an interior
+ * one - and it is the one grid fact that survives generation, since a jittered position cannot be
+ * turned back into a cell.
+ */
+export const gridExtentOf = (nodes: readonly TopologyNode[]): GridExtent => ({
+  columns: Math.max(0, ...nodes.map((node) => node.cell.column + 1)),
+  rows: Math.max(0, ...nodes.map((node) => node.cell.row + 1)),
+});
 
 export type TopologyRequest = {
   readonly config: MapConfig;

@@ -17,7 +17,7 @@ import type { GraphLogic, Traversal } from "./graph";
 import type { EdgeId, NodeId } from "./ids";
 import { type MapEdge, makeEdge, type Position, type TravelMode } from "./map";
 import type { Rng, RngState } from "./rng";
-import type { MapTopology, TopologyNode } from "./topology";
+import { type GridExtent, gridExtentOf, type MapTopology, type TopologyNode } from "./topology";
 
 export type RiverRequest = {
   readonly topology: MapTopology;
@@ -71,16 +71,6 @@ const DRIFT_MAX_EXCLUSIVE = 2;
 
 /** The river is drawn on the midline between two cells, half a cell short of either. */
 const MIDLINE_OFFSET = 0.5;
-
-type Grid = {
-  readonly columns: number;
-  readonly rows: number;
-};
-
-const gridOf = (nodes: readonly TopologyNode[]): Grid => ({
-  columns: Math.max(0, ...nodes.map((node) => node.cell.column + 1)),
-  rows: Math.max(0, ...nodes.map((node) => node.cell.row + 1)),
-});
 
 /**
  * How far along each step of the river the water sits, as a cut index. Index `c` means the water
@@ -140,7 +130,7 @@ const riverPoints = (
   return points;
 };
 
-const feasibleOrientations = (grid: Grid): readonly Orientation[] => {
+const feasibleOrientations = (grid: GridExtent): readonly Orientation[] => {
   const orientations: Orientation[] = [];
   if (grid.columns >= MIN_SPAN) {
     orientations.push("vertical");
@@ -157,7 +147,7 @@ type Course = {
   readonly state: RngState;
 };
 
-const plotCourse = (rng: Rng, state: RngState, grid: Grid): Course | null => {
+const plotCourse = (rng: Rng, state: RngState, grid: GridExtent): Course | null => {
   const feasible = feasibleOrientations(grid);
   const [only, ...rest] = feasible;
   if (only === undefined) {
@@ -274,7 +264,7 @@ const spanRiver = (
 export const createRiverLogic = (deps: RiverDeps): RiverLogic => ({
   carve: ({ topology, balance, state }) => {
     const { minBridges, maxBridges, nodeSpacing } = balance.map;
-    const course = plotCourse(deps.rng, state, gridOf(topology.nodes));
+    const course = plotCourse(deps.rng, state, gridExtentOf(topology.nodes));
     if (course === null) {
       return { kind: "river_not_bridgeable", crossings: 0, requiredBridges: minBridges };
     }
