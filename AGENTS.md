@@ -24,11 +24,17 @@ Use the latest stable versions at the time you install. Do not pin to versions f
 | Map rendering | SVG via React for now; PixiJS may replace it later behind `MapRenderer` |
 | Lint + format | Biome (no ESLint, no Prettier) |
 | Unit / integration tests | Vitest |
+| DOM environment for component tests | jsdom (`apps/web` project only) |
 | Property-based tests | fast-check (via `@fast-check/vitest`) |
 | End-to-end tests | Playwright |
 | CI | GitHub Actions |
 
 Do not add dependencies beyond this list without stating why in the task note. Prefer writing 30 lines over adding a package.
+
+Two version couplings are not optional:
+
+- **Vite and Vitest are bumped together.** Vitest depends on Vite; installing a different major puts two copies of Vite in the tree and the web build and the test runner stop agreeing. Check that `node_modules/.bun` holds exactly one `vite@` after any bump.
+- **Biome is pinned exactly**, no caret. Formatter output and the JSON reporter shape both move between minors, and `tools/biome/architecture-rules.test.ts` parses that reporter.
 
 ## Repository layout
 
@@ -57,6 +63,7 @@ These are the rules most likely to be broken by accident. Tests enforce some of 
 2. **Determinism.** All randomness goes through the seeded RNG in `core/src/rng`. Same seed + same action list ⇒ byte-identical final state. A determinism test runs on every commit.
 3. **State is immutable data.** `step(state, actions) => { state, events }`. Game state is plain serializable objects (no classes, no Maps/Sets in state, no functions). `JSON.parse(JSON.stringify(state))` must round-trip.
 4. **Hidden information is enforced by types.** The criminal's true position lives in `WorldState`. The UI only ever receives `HunterView`, produced by `core/src/view.ts`. `apps/web` must never import `WorldState`. A test checks that `HunterView` contains no criminal position fields.
+   The UI still has to hold a game between turns. It holds it as `SealedWorld`: an opaque alias of `WorldState` with no readable members, which `web` can store and hand back to `core` but cannot look inside. Sealing is a type-level guarantee, not an encryption; the bytes are still there for `JSON.stringify` to find, and that is accepted, because the same bytes have to survive serialization for replays to work.
 5. **Dependency direction:** `web → core`, `sim → core`. `core` imports nothing from the workspace.
 6. **Data-driven content.** Actions, events, and criminal profiles are defined as typed data tables plus small handler functions, so adding one is a new entry, not a new branch in the turn loop.
 7. **Numbers live in one place.** Balance constants go in `core/src/balance.ts`, I/O limits in `limits.ts`. No magic numbers in logic.

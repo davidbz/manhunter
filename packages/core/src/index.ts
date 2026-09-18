@@ -1,3 +1,5 @@
+export type { Balance, CriminalProfileWeights, DistrictProperties } from "./balance";
+export { BALANCE } from "./balance";
 export type { GameConfig, MapConfig } from "./config";
 export type {
   CriminalAction,
@@ -7,6 +9,17 @@ export type {
 } from "./criminal";
 export { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
 export type { GameEvent, GameEventKind } from "./events";
+export type {
+  Adjacency,
+  GraphLogic,
+  Neighbor,
+  Path,
+  PathResult,
+  ReachableResult,
+  SearchFailure,
+  Traversal,
+} from "./graph";
+export { createGraphLogic } from "./graph";
 export type { Containment, HunterAction, HunterState, Roadblock } from "./hunter";
 export { makeHunterState } from "./hunter";
 export type { EdgeId, NodeId, ReportId } from "./ids";
@@ -32,6 +45,8 @@ export type {
 } from "./map";
 export { makeEdge, makeExit, makeNode } from "./map";
 export { GAME_TITLE } from "./meta";
+export type { MinCutLogic, MinCutResult } from "./mincut";
+export { createMinCutLogic } from "./mincut";
 export type {
   HiddenReportField,
   Report,
