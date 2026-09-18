@@ -156,7 +156,7 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - **The criminal's start node is `MapGraph.incidentNodeId`**, not a criminal field: it is the crime scene, both sides know it, and it is why a whole `MapGraph` can go into `HunterView`. M2.2's validity rules ("start not adjacent to an exit") refer to this field. **M3.2's AC needs rewording because of it**: a view *does* legitimately contain a node id the criminal once stood on.
   - Same trap from the other side: `GameEvent`'s `civilian_hurt` carries a node id on purpose (DESIGN.md: harm confirms a location). **M3.2's property test must assert the shape of `HunterView`, not scan it for node ids.** The shape assertions are already written in `view.test.ts` as compile-time checks (`HunterView` has no `criminal`, `config` or `rng` member; `HunterReport` has no `truth` or `accuracy`). Verified by mutation: adding a `criminal` member and dropping `truth` from the hidden list each fail `bun run typecheck`.
   - `GameOutcome` variants carry a turn and **never a node id**, including `escaped`. Where the criminal was is the reveal's job, not the outcome's, so the outcome can sit in `HunterView` unredacted.
-  - `HunterView` has **no `config` member**, because `GameConfig` names the criminal profile, which DESIGN.md hides. The deadline reaches the UI as a derived `turnsRemaining`. **Open consequence for M3.1 and M5.2: `apps/web` cannot build a `GameConfig` without naming a profile.** Either `createGame` takes a profile-free request (difficulty in, profile chosen in `core`), or the UI knows. Decide at M3.1.
+  - `HunterView` has **no `config` member**, because `GameConfig` names the criminal profile, which DESIGN.md hides. The deadline reaches the UI as a derived `turnsRemaining`. **Open consequence for M3.1a and M5.2: `apps/web` cannot build a `GameConfig` without naming a profile.** Either `createGame` takes a profile-free request (difficulty in, profile chosen in `core`), or the UI knows. Decided at M3.1a.
   - `RevealFrame` is `{ turn, view, criminalNodeId }` - the plan's "and nothing else", taken literally. If M3.9 finds that the replay cannot explain a decision without the criminal's chosen action, adding `criminalAction` is the one change to make, and it is still not `WorldState`.
   - `Report` keeps `truth` and `accuracy`, and the list of hidden field names is **data** (`HIDDEN_REPORT_FIELDS`), with `HunterReport = Omit<Report, HiddenReportField>` derived from it, so M3.2's redaction and the type it produces cannot drift. `makeReport` takes `observedAtTurn` + `deliveryDelayTurns` (how every producer thinks about lateness) and clamps accuracy into [0, 1].
   - `ReportContent` has two variants for now, `sighting` and `no_sighting`. Negative evidence is in from the start because M4.0's heatmap (M5.1 before the review renumbered it) prunes with it. Content is structured, never prose: `core` holds no user-facing strings.
@@ -312,39 +312,54 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ## M3 — Turn loop (MVP rules)
 
-- [ ] **M3.1 Game init**
+- [ ] **M3.1a Game init: setup, config and the derived profile**
   deps: M2.3, M1.3
-  `createGame(setup, seed) => SealedWorld`.
+  Split at the pre-M2.2 review: the `GameSetup`/`GameConfig` split plus two seed derivations is one session, and sealing is a type-level change with lint and architecture-test plumbing of its own. Downstream tasks that work on a world inside `core` (M3.3, M3.5) need only this half.
+  `createGameLogic(deps).create(setup, seed) => WorldState` here, becoming `=> SealedWorld` at M3.1b. **Not** the bare `createGame(setup, seed)` this task first specified: `create*` is an injectable factory (M1.2's naming convention) and `balance` is an argument rather than an import (M1.3), so a bare call has nowhere for either to enter. See "How `core`'s game functions are wired" below; the same shape applies to M3.8a and M3.10.
   **Resolves M1.2's open consequence.** `GameConfig` names the criminal profile, which DESIGN.md hides from the player, so `apps/web` cannot construct one. Split the type: `GameSetup` is the player-visible half (map size, deadline, difficulty) and is what `web`, `sim` and the replay string pass in; `GameConfig` stays the complete resolved form and lives inside `WorldState`. `createGame` derives the criminal profile from `setup` plus a forked RNG stream, so the same seed always yields the same profile and the replay never stores it - which is also why a shared link cannot spoil the hunt it replays.
   **The start hour is derived the same way and is not in `GameSetup`** (see "Decisions"): DESIGN.md says a hunt starts at a random time of day, so it is a draw off the seed, not a player choice. `GameConfig.startHour` is the resolved form and stays.
-  **Seals the world, per architecture rule 4.** Declare `SealedWorld` in `core`: a branded alias of `WorldState` with no readable members, plus internal `seal`/`unseal` that `core` alone calls. `core` exports its game functions over `SealedWorld` (`toHunterView`, `step`, reveal frames), so M5.2 has a legal way to hold a game between turns. `WorldState` stays exported for `sim`, which is a balance tool with no hidden-information concern; `web` is held to the sealed form by the existing `biome.json` deny list.
-  Add `GameConfig` to that deny list and a fixture to `tools/biome/architecture-rules.test.ts`, exactly as M1.2 did for `Report`.
-  AC: deterministic; initial meters within bounds; the same seed picks the same profile **and the same start hour**; a type-level test asserts `SealedWorld` exposes no members.
+  AC: deterministic; initial meters within bounds; the same seed picks the same profile **and the same start hour**.
+
+- [ ] **M3.1b Sealing the world**
+  deps: M3.1a
+  **Seals the world, per architecture rule 4.** Declare `SealedWorld` in `core`: a branded alias of `WorldState` with no readable members, plus internal `seal`/`unseal` that `core` alone calls. `core` exports its game functions over `SealedWorld` (`toHunterView`, `step`, reveal frames), so M5.2 has a legal way to hold a game between turns. **There is one signature, not two:** every exported game function takes and returns `SealedWorld`. `seal` stays internal to `core`; `unseal(world) => WorldState` is **exported**, because `sim` is a balance tool with no hidden-information concern and would otherwise hold a world it could not step. `web` is held to the sealed form by the `biome.json` deny list, which `unseal` joins. See "How `sim` reaches inside a sealed world" below.
+  Add `GameConfig` and `unseal` to that deny list, with a fixture each in `tools/biome/architecture-rules.test.ts`, exactly as M1.2 did for `Report`.
+  `create` returns `WorldState` after M3.1a and `SealedWorld` after this task; that one return type is the whole churn the split costs.
+  AC: a type-level test asserts `SealedWorld` exposes no members and that a plain `WorldState` is not assignable to it; `apps/web` importing `unseal` or `GameConfig` fails lint.
 
 - [ ] **M3.2 Hunter view**
-  deps: M3.1
-  `toHunterView(world) => HunterView`. Excludes criminal position, profile, and hidden report fields.
+  deps: M3.1b
+  `toHunterView(world) => HunterView`. Excludes criminal position, profile, and hidden report fields. It stays a bare function rather than a `create*` factory: it takes no deps and reads no balance, which is the line the wiring decision below draws between the two.
   **Also redacts the event feed, which the first draft of this task missed.** `GameEvent`'s `eyewitness` and `prank_call` variants both carry a `reportId`, so an unredacted feed names which report is a prank and undoes the whole point of hiding `truth` (see "Decisions"). Declare `HunterEvent` in `view.ts`, collapsing those two into one `report_arrived { turn, reportId }`, derive it from a **data** list of hidden variants the way `HunterReport` is derived from `HIDDEN_REPORT_FIELDS`, and change `HunterView.events` to `readonly HunterEvent[]`.
   AC: the shape assertions in `view.test.ts` (no `criminal`, `config` or `rng` member) stay compile-time checks, plus a property test over generated worlds asserting that every report in the view has no `truth`/`accuracy`, that no report with `receivedAtTurn` after `clock.turn` appears at all, and that no event in the view distinguishes a prank from a sighting. Verify the last one by mutation: putting `prank_call` back into the view must fail it.
   **Do not write "the view contains no node id the criminal has stood on"**, which is the original wording and is false by design: `MapGraph.incidentNodeId` is the crime scene and `civilian_hurt` carries a location, both of which the hunter is meant to see (M1.2's notes). The test asserts the shape, never scans for ids.
 
 - [ ] **M3.3 Action framework + roadblock**
-  deps: M3.1
+  deps: M3.1a
   Data-driven action table (cost, target type, validate, apply). Implement `roadblock`. Validation errors are returned, not thrown.
-  AC: can't exceed AP; roadblock blocks the edge for its duration; trust cost applied.
+  **Validation is now the only thing guarding the budget.** The bankruptcy end condition was cut (decision below) precisely because this rejection makes it unreachable, so "the hunter cannot afford this" is a validation error here and nowhere else.
+  AC: can't exceed AP; can't spend below a zero budget; roadblock blocks the edge for its duration; trust cost applied.
 
-- [ ] **M3.4 Canvass, CCTV, true briefing**
+- [ ] **M3.4a Canvass and pull CCTV**
   deps: M3.3
-  CCTV queues a delayed, reliable report of the past; canvass produces reports based on witness density and trust; briefing raises report volume and criminal heat.
+  CCTV queues a delayed, reliable report of the past; canvass produces reports based on witness density and trust.
+  Split at the pre-M2.2 review: these two are the report producers and share the delayed-report seam M3.6 builds on, and the queue is new machinery rather than a table entry. Briefing produces no report of its own and moves two other meters.
   AC: each action has tests for its effect, including CCTV delay.
 
+- [ ] **M3.4b True briefing**
+  deps: M3.4a
+  Raises report volume and criminal heat, gains trust.
+  Small on purpose and left standalone rather than folded into M3.6, because it is the one MVP action feeding two later tasks from opposite sides: M3.6's report-volume formula and M3.5's criminal knowledge (DESIGN.md: the AI sees news briefings).
+  AC: the volume multiplier changes how many reports a turn produces; criminal heat and trust both move by their `balance.actions.trueBriefing` amounts.
+
 - [ ] **M3.5 Criminal AI: amateur**
-  deps: M3.1
+  deps: M3.1a, M3.3
   Utility-based chooser per DESIGN.md. Criminal only reasons over what it can know (visible roadblocks, briefings).
+  M3.3 added to deps at the pre-M2.2 review: "never moves through a known roadblock" needs roadblocks to exist, and M1.4a's note puts them in `Traversal.blockedEdgeIds`, which M3.3 adds. Nothing upstream of this task produced one.
   AC: on an open map with no hunter actions, reaches an exit in ≤ path length + slack; never moves through a known roadblock; decisions deterministic per seed.
 
 - [ ] **M3.6 Reports and pranks**
-  deps: M3.4, M3.5
+  deps: M3.4b, M3.5
   Sightings generated from criminal movement through witnessed districts; prank calls from rate formula.
   AC: over a hard-coded list of seeds, mean sighting accuracy at high trust exceeds mean accuracy at low trust by a named margin, and prank rate rises with reward the same way. The seed list, the sample size and the margin are all named constants: a generated seed set would make this the one test in the repo that can fail differently on two runs of the same commit, and a failure has to name the seed that broke it so M3.6 can pin it as a regression.
 
@@ -356,8 +371,8 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   AC: each event unit-tested; events only fire when triggers hold; every `GameEvent` variant is either in `HunterEvent` or on the hidden list, asserted exhaustively so a new variant cannot default into the view.
 
 - [ ] **M3.8a `step` skeleton: intel, events, consequences**
-  deps: M3.4, M3.6, M3.7
-  `step(world, hunterActions) => { world, events }` with the three phases that touch only the world: intel (queued reports land), events (the M3.7 table fires), consequences (meters, clock). Planning and resolution are stubs that pass the world through, and the criminal does not move yet.
+  deps: M3.4b, M3.6, M3.7
+  `createTurnLogic(deps).step(world, hunterActions) => { world, events }` (wiring decision below) with the three phases that touch only the world: intel (queued reports land), events (the M3.7 table fires), consequences (meters, clock). Planning and resolution are stubs that pass the world through, and the criminal does not move yet.
   Split again in review: M3.8a was still the integration point for six prior tasks, and the three world-only phases are testable without the criminal AI existing.
   Consequences is what advances **political pressure**, which no task previously produced: it rises by a per-turn constant from `balance.ts` and jumps on `civilian_hurt`, clamped to [0, 100]. Nothing reads it as a trigger in the MVP - DESIGN.md's override events are M6 - and it is deliberately not a score component, because it tracks the clock and M3.10 already scores turns taken. It exists so M5.4 can show the case getting hotter.
   AC: each of the three phases has a test asserting what it does and does not touch; meters always within bounds, pressure included; a turn with no actions and no events is a clock tick and nothing else.
@@ -366,28 +381,28 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   deps: M3.8a, M3.3, M3.5
   Fill in the two stubbed phases: planning spends AP on the queued hunter actions, resolution asks the criminal AI for its move and resolves both sides at once. Every interaction rule lives here - roadblock hit, slip past, capture on the same node - and this is the only phase where the order of the two sides could bias the outcome, so the tests are about simultaneity, not just effects.
   **Split before starting** (see Inbox): AP spend and queue validation is one session, simultaneous resolution plus every interaction rule is another. This task has the shape M3.8 was already split for once.
-  **Owns `GameOutcome.captured.alive`**, decided in review: `balance.score.capturedAliveBonus` exists because DESIGN.md lists the component, but nothing produced the flag, and M3.10 sits downstream of M3.8c so it could not add it. Capture resolution sets it here.
-  AC: a hunter action and a criminal move that target the same edge resolve the same way regardless of evaluation order; a criminal moving into a roadblocked edge is stopped; capture is detected when both sides occupy one node and carries whether it was alive.
+  **Does not own an `alive` flag.** An earlier review gave `GameOutcome.captured` one; the pre-M2.2 review cut it, because no MVP action can use force and capture is both sides on one node, so it would be `true` by construction (decision below). `balance.score.capturedAliveBonus` is gone with it.
+  AC: a hunter action and a criminal move that target the same edge resolve the same way regardless of evaluation order; a criminal moving into a roadblocked edge is stopped; capture is detected when both sides occupy one node.
 
 - [ ] **M3.8c End conditions and determinism**
   deps: M3.8b
-  Capture, escape, trust collapse, casualties, bankruptcy.
+  Capture, escape, trust collapse, casualties. **No bankruptcy**: cut at the pre-M2.2 review (decision below), and `GameOutcome`, `balance.score.outcomeBase` and `balance.endConditions` no longer carry it.
   Renumbered in review from M3.8b when the phase loop was split in two. References elsewhere in this file were updated; a stale "M3.8b owes the determinism test" in an older note means this task.
   AC: each end condition has a test that reaches it; determinism property test (seed + action list ⇒ identical final state over 200 random games).
 
 - [ ] **M3.9 Replay format**
   deps: M3.8c
   M3.10 was listed as a dep in the first draft and is not one: the replay format does not score anything. Only M5.6a needs both. Dropped so the two can run in parallel.
-  `Replay = { version, seed, setup, actions[] }`, encode to a compact URL-safe string, replay to a sequence of frames. `setup`, not `config`: M3.1 split them so the criminal profile is derived from the seed rather than stored, which keeps the profile out of a shared link (DESIGN.md "After-action replay").
+  `Replay = { version, seed, setup, actions[] }`, encode to a compact URL-safe string, replay to a sequence of frames. `setup`, not `config`: M3.1a split them so the criminal profile is derived from the seed rather than stored, which keeps the profile out of a shared link (DESIGN.md "After-action replay").
   The original signature `replay(replay) => WorldState[]` cannot be used by M5.6b: architecture rule 4 forbids `apps/web` from importing `WorldState`, and `biome.json` already blocks it by name. DESIGN.md still requires the replay viewer to reveal the criminal's true path. Resolve with a third type declared in M1.2 - a post-game reveal frame carrying the hunter view plus the criminal's true position for that turn, and nothing else. `WorldState[]` may exist inside `core` as an intermediate; it must not cross into `web`.
   Bounded by `LIMITS.maxReplayStringLength` at decode, before parsing or allocating, with an over-the-limit test.
   AC: replaying recorded games reproduces final state exactly; `web` can render a full replay without importing `WorldState`; a replay string one character over the limit is rejected.
 
 - [ ] **M3.10 Scoring**
   deps: M3.8c, M1.3
-  Score a finished game per DESIGN.md "End conditions": turns taken, budget spent, civilian harm, trust remaining, captured alive. Pure function from a finished world to a typed breakdown; weights live in `balance.ts`.
+  Score a finished game per DESIGN.md "End conditions": turns taken, budget spent, civilian harm, trust remaining, captured alive. `createScoringLogic({ balance }).score(world)`: stateless logic over a finished world returning a typed breakdown. The weights live in `balance.ts` and arrive as an argument, never an import (wiring decision below).
   Added in review: DESIGN.md specifies a score and M5.6a renders a "score breakdown", but nothing in the plan computed one.
-  `capturedAliveBonus` reads `GameOutcome.captured.alive`, which **M3.8b** now produces. Do not re-litigate the knob; it has data behind it.
+  **The breakdown has four components, not five.** Captured-alive was cut at the pre-M2.2 review (decision below) and `capturedAliveBonus` no longer exists in `balance.ts`; it returns with the force actions in M6. Score what the world can vary: turns taken, budget spent, casualties, trust remaining.
   AC: unit tests pin the breakdown for two hand-built finished games; the breakdown is serializable and carries its components, not just a total.
 
 ---
@@ -423,12 +438,15 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
 
 ## M5 — Web UI (dispatch style)
 
+There is no M5.1: the belief heatmap was renumbered to **M4.0** in review, because it is a pure `core` module that M4.3 tunes against.
+
 Playwright covers **M5.5's turn flow and M5.6a's finish, and nothing else** ("Decisions"): AGENTS.md limits e2e to critical flows, so every other assertion here runs under the jsdom environment M5.2 installs.
 
 - [ ] **M5.2 Game store**
-  deps: M3.8c, M3.1
+  deps: M3.8c, M3.1b, M3.2
+  M3.2 added to deps at the pre-M2.2 review: the store exposes `HunterView`, and no chain of its other deps reaches `toHunterView`. M5.4 gets it transitively through here.
   Zustand store holding the sealed world privately and exposing only `HunterView` + dispatch functions.
-  **The original wording, "holding `WorldState` privately", cannot be implemented**: architecture rule 4 forbids `apps/web` from importing `WorldState` and `biome.json` already blocks it by name, so the task as first written would not lint. The store holds `SealedWorld` from M3.1 - opaque data it can keep and hand back to `core`, never read - alongside the action log M5.6b's share link needs. Dispatch calls `core`'s `step`; the store holds data and calls logic, it does not become logic (engineering principle 1).
+  **The original wording, "holding `WorldState` privately", cannot be implemented**: architecture rule 4 forbids `apps/web` from importing `WorldState` and `biome.json` already blocks it by name, so the task as first written would not lint. The store holds `SealedWorld` from M3.1b - opaque data it can keep and hand back to `core`, never read - alongside the action log M5.6b's share link needs. Dispatch calls `step` on the `GameLogic` wired at the composition root and handed to the store, rather than importing it (wiring decision below); the store holds data and calls logic, it does not become logic (engineering principle 1).
   Wire it in `apps/web/src/main.tsx`, the composition root (M0.4's note), not inside a component.
   This task also owns the **DOM test environment**, which the Inbox flagged and nothing had claimed: switch the `web` Vitest project to `environment: "jsdom"` and add `jsdom`, the one new dependency. Assert through `react-dom/client` and DOM queries. Do not add a component-testing library unless a test genuinely needs user-event semantics, and justify it in the note if you do; Playwright still owns the end-to-end flows.
   AC: components cannot access `WorldState` via exported types; a type-level test asserts `SealedWorld` exposes no members; store tests run under jsdom.
@@ -437,7 +455,8 @@ Playwright covers **M5.5's turn flow and M5.6a's finish, and nothing else** ("De
   deps: M5.2
   `MapRenderer` component: nodes, typed edges, exits, roadblocks, selection. Everything the map is made of, drawn from `HunterView`, with no overlay.
   Split out of M5.3 in review: the base map and the belief overlay have different inputs, different dependencies and different failure modes, and together they were the largest UI task in the plan. The `MapRenderer` seam AGENTS.md names (PixiJS may replace it later) is defined here.
-  AC: under jsdom, clicking a node selects it, and node count and edge count match the view. Not Playwright ("Decisions"): this is a rendering assertion, not a critical flow.
+  Draws `MapGraph.river` too: M2.1c put it on the graph specifically so the renderer could have it, and an AC that does not name it is how it gets silently dropped a second time.
+  AC: under jsdom, clicking a node selects it, node count and edge count match the view, and a view with a river renders it. Not Playwright ("Decisions"): this is a rendering assertion, not a critical flow.
 
 - [ ] **M5.3b Heatmap overlay**
   deps: M5.3a, M4.0
@@ -473,8 +492,10 @@ Playwright covers **M5.5's turn flow and M5.6a's finish, and nothing else** ("De
 
 - [ ] **M5.7 Visual pass**
   deps: M5.6b
-  Dispatch theme: dark palette tokens, monospace font, glow on roads, heat colors. Add `CREDITS.md`.
-  AC: no layout overflow at 1280×800 and 1920×1080.
+  Dispatch theme per DESIGN.md "Visual direction": dark background, thin glowing roads, red heatmap, monospace report feed. Add `CREDITS.md`.
+  **Scoped at the pre-M2.2 review**, because "visual pass" named no bounded deliverable and would otherwise absorb every UI nit in M5. What it delivers, and nothing else: one token file (`apps/web/src/theme.ts`) holding the palette, the type scale and the heat ramp; every component reading tokens instead of literals; the glow treatment on road edges; `CREDITS.md` with a source and licence line per asset (there are none today, and AGENTS.md forbids adding one without an entry).
+  Out of scope: layout changes, new components, animation, cross-browser work. Anything found that needs one goes in the Inbox.
+  AC: no layout overflow at 1280×800 and 1920×1080; a test asserts no colour literal appears under `apps/web/src` outside the token file; `CREDITS.md` exists.
 
 ---
 
@@ -488,6 +509,8 @@ Playwright covers **M5.5's turn flow and M5.6a's finish, and nothing else** ("De
 - [ ] Voronoi-based map generator (must pass the same validator)
 - [ ] Hardcore mode (no heatmap)
 - [ ] PixiJS renderer behind `MapRenderer`
+- [ ] Force, and the captured-alive score component it makes real (the `alive` flag on `GameOutcome.captured` plus `score.capturedAliveBonus`)
+- [ ] Actions billed after they are chosen (overtime, standing upkeep on a containment, federal help), and the bankruptcy end condition they would make reachable again
 - [ ] Sound (freesound.org, with credits)
 
 ---
@@ -500,14 +523,14 @@ Each entry blocks a named task. Decide before that task starts, not during it. R
 
 - **MVP meter set.** Pressure in, fatigue out. `HunterState` is `{ actionPoints, budget, trust, pressure, containments }` (M1.2). M3.8a's consequences phase is what raises pressure; it is display-only in the MVP and is not a score component, because it tracks the clock and M3.10 already scores turns taken. DESIGN.md now lists fatigue under "Out of scope for MVP".
 - **Post-game reveal type.** `RevealFrame = { turn, view, criminalNodeId }`, declared in M1.2 beside `HunterView`. M3.9 uses it; `WorldState` may exist inside `core` as an intermediate and never crosses into `web`.
-- **How the UI holds a game between turns.** M5.2 said "a store holding `WorldState` privately", which architecture rule 4 forbids and `biome.json` blocks by name. Resolution: `SealedWorld`, an opaque branded alias of `WorldState` with no readable members, declared in M3.1. The store keeps data and hands it back to `core`; it never reads it and never becomes logic. Sealing is a type-level guarantee, not encryption - the bytes survive `JSON.stringify` because replays need them to - and that limit is written into AGENTS.md rule 4.
-- **Config versus setup.** `GameConfig` names the criminal profile, which DESIGN.md hides, so `web` could not build one. M3.1 splits `GameSetup` (player-visible, goes in the replay string) from the resolved `GameConfig` (stays in `WorldState`), and derives the profile from the seed. A shared replay link therefore does not spoil the hunt it replays.
+- **How the UI holds a game between turns.** M5.2 said "a store holding `WorldState` privately", which architecture rule 4 forbids and `biome.json` blocks by name. Resolution: `SealedWorld`, an opaque branded alias of `WorldState` with no readable members, declared in M3.1b. The store keeps data and hands it back to `core`; it never reads it and never becomes logic. Sealing is a type-level guarantee, not encryption - the bytes survive `JSON.stringify` because replays need them to - and that limit is written into AGENTS.md rule 4.
+- **Config versus setup.** `GameConfig` names the criminal profile, which DESIGN.md hides, so `web` could not build one. M3.1a splits `GameSetup` (player-visible, goes in the replay string) from the resolved `GameConfig` (stays in `WorldState`), and derives the profile from the seed. A shared replay link therefore does not spoil the hunt it replays.
 
 - **`GameEvent` leaks which report is a prank, and `HunterView` needs an event projection.** `events.ts` gives `eyewitness` and `prank_call` a `reportId`, and `HunterView.events` is the unredacted `GameEvent[]`. A `prank_call` event therefore names exactly which report is a prank - the one thing `HIDDEN_REPORT_FIELDS` and `HunterReport` exist to hide. Neither `view.test.ts`'s shape checks nor M3.2's stated AC ("every report in the view has no `truth`/`accuracy`") would catch it, so it would have shipped. Resolution: declare `HunterEvent` in `view.ts` beside `HunterReport`, collapsing both variants into one `report_arrived { turn, reportId }`; `HunterView.events` becomes `readonly HunterEvent[]`. The feed still learns that a report landed, which is what M5.4 needs, and stops learning what kind it was. DESIGN.md's "Reports" section now states the rule. The hidden-variant list is **data**, the way `HIDDEN_REPORT_FIELDS` is, so the projection and its type cannot drift. Blocks M3.2; M3.7 must not add an event that names a report's nature.
 
-- **Where the start hour comes from.** Derived from the seed, and **not** a member of `GameSetup`. DESIGN.md says a hunt "starts at a random time of day"; M3.1's first draft listed start hour in the player-visible setup, which would make it a player choice and put it in every replay string. Deriving it costs nothing, keeps the string shorter, and leaves one fewer field for `web`, `sim` and the replay codec to agree on. `GameConfig.startHour` stays - that is the resolved form. Blocks M3.1.
+- **Where the start hour comes from.** Derived from the seed, and **not** a member of `GameSetup`. DESIGN.md says a hunt "starts at a random time of day"; M3.1a's first draft listed start hour in the player-visible setup, which would make it a player choice and put it in every replay string. Deriving it costs nothing, keeps the string shorter, and leaves one fewer field for `web`, `sim` and the replay codec to agree on. `GameConfig.startHour` stays - that is the resolved form. Blocks M3.1a.
 
-- **Whether a capture was alive.** `GameOutcome`'s `captured` variant gains `alive: boolean`, set by **M3.8b**'s capture resolution. `balance.ts` carries `score.capturedAliveBonus` because DESIGN.md lists the component, but nothing produced the flag, and M3.10 (which reads it) depends on M3.8c - so the type change would have had to land upstream of the task that discovered it was needed. Decided here instead. M3.10 renders the bonus; it does not invent the data.
+- **Whether a capture was alive.** An earlier review gave `GameOutcome.captured` an `alive: boolean` for **M3.8b** to set. **Superseded at the pre-M2.2 review, for the same reason bankruptcy was cut.** The MVP action subset is roadblock, canvass, CCTV and briefing, none of which use force, and capture is both sides standing on one node - so the flag is `true` by construction and `capturedAliveBonus` is not a score component but a constant added to every win. Resolution: `GameOutcome.captured` gains no flag, `score.capturedAliveBonus` is removed from `balance.ts` (done at this review), and DESIGN.md's win line says the component arrives with the actions that can vary it. M6 names the door. Blocks M3.8b, M3.10.
 
 - **How much of M5 is Playwright's.** AGENTS.md is explicit: "`web` gets Playwright tests only for critical flows (start game, take a turn, reach an end screen)." Five M5 ACs contradicted it by naming Playwright for node selection, score-component rendering, overlay hit-testing and replay scrubbing. Resolution: **Playwright owns exactly M5.5's turn flow and M5.6a's finish**; M5.3a, M5.3b, M5.4 and M5.6b's scrubber assert under the jsdom environment M5.2 installs. The ACs below are reworded. This is also the cheaper split - a jsdom assertion on the mapping from probability to a rendered attribute is a unit test, and AGENTS.md separately forbids snapshot-testing the SVG.
 
@@ -519,6 +542,14 @@ Each entry blocks a named task. Decide before that task starts, not during it. R
 
 - **Score model.** Decided at M1.3, as planned. Capture scores a base of 1200; turns taken, budget spent and casualties subtract; trust remaining and a live capture add. The invariant M3.10 and M4.3 must preserve is that the worst possible capture outscores the best possible loss, which `balance.test.ts` asserts from the constants themselves.
 
+- **How `core`'s game functions are wired.** M3.1a's `createGame(setup, seed)` had nowhere for `balance` to enter, which M1.3 requires ("logic takes `balance: Balance` as an argument and does not import `BALANCE`"), and it spent the `create*` prefix M1.2 reserved for injectable factories. Resolution: every stateless game module follows the `createRng` template - `createXLogic(deps)` returning an object of pure functions, wired once per app at the composition root (`apps/web/src/main.tsx`, `packages/sim/src/main.ts`). So M3.1a is `createGameLogic(deps).create(setup, seed)`, M3.8a is `createTurnLogic(deps).step(...)`, M3.10 is `createScoringLogic({ balance }).score(...)`. `toHunterView` and the `make*` constructors stay bare functions: they take no deps and read no balance, which is exactly the line between the two prefixes. M5.2's store receives a wired `GameLogic`; it never calls `create*` itself. Blocks M3.1a, M3.8a, M3.10.
+
+- **How `sim` reaches inside a sealed world.** M3.1b sealed every game function behind `SealedWorld` while telling `sim` to use `WorldState`. A brand makes the two non-assignable and `seal` was to stay core-internal, so `sim` would have held a world it could not step - and the alternative, exporting `step` over both types, is two APIs for one function. Resolution: **one signature, and `unseal` is exported.** Game functions take and return `SealedWorld` only; `seal` stays internal; `unseal(world) => WorldState` is exported and denied to `apps/web` by name in `biome.json` beside `WorldState` and `GameConfig`, with its own fixture in `tools/biome/architecture-rules.test.ts`. That is consistent with what AGENTS.md rule 4 already says sealing is - a type-level guarantee, not encryption - and gives the one workspace with no hidden-information concern a named, lint-enforced door instead of a parallel API. Most of what M4.2 aggregates (outcome, turns taken, loss reason) is visible in `HunterView` anyway; `unseal` is for the rest. Blocks M3.1b; M4.2 is the consumer.
+
+- **Bankruptcy is not an MVP end condition.** DESIGN.md listed "budget < 0" as a loss, but M3.3 rejects an action the hunter cannot afford, so the balance floors at 0 and the condition is unreachable - M3.8c's AC ("each end condition has a test that reaches it") could not have been met. Reading it as "cannot afford the cheapest action" does not rescue it either: `balance.actions.trueBriefing.budgetCost` is 0, so something is always affordable. Resolution: **cut it**, and cut it in the code at this review rather than leaving M3.8c to discover it - DESIGN.md's loss list, `GameOutcome`'s `bankrupt` variant, `score.outcomeBase.bankrupt` and `endConditions.bankruptBelow` are all gone. Budget stays a real constraint, enforced at planning, and running dry costs the hunter their tools rather than the case. Reintroducing the loss needs an action billed *after* it is chosen (overtime, standing upkeep on a containment, federal help); M6 now names that. Blocks M3.3, M3.8c, M3.10.
+
+- **Where slow tests live.** M2.3's property sweep over generate-until-valid, M3.6's statistical margins, M3.8c's 200-game determinism run and M4.3's batch all land in `bun run test`, which every task's definition of done runs, and none of the four knew about the others. Decided now so they are written against one convention instead of each inventing one: a slow test is named `*.slow.test.ts` and belongs to a fifth Vitest project; `bun run test` and CI keep running everything, and a new `bun run test:fast` excludes that project for the inner loop. The project and the script are created by **M2.3**, the first task that has a slow test to put in one - adding empty config now would be dead weight, and the `vitest.config.ts` shape is already settled (M0.3). The trigger is measured, not felt: when `bun run verify` passes 60 seconds, the slowest test moves. Guides M2.3, M3.6, M3.8c, M4.3.
+
 **Open**
 
 - None. Everything raised in review has a decision above; new questions go here with the task they block.
@@ -528,6 +559,8 @@ Each entry blocks a named task. Decide before that task starts, not during it. R
 ## Inbox
 
 Agents add discovered out-of-scope work here.
+
+- ~~Pre-M2.2 plan review raised ten findings; the top three were fixed.~~ **All ten are resolved.** Three landed as decisions above (how `core`'s game functions are wired, how `sim` reaches inside a sealed world, bankruptcy cut). The rest landed at the same review: captured-alive cut from the MVP, M3.1 and M3.4 each split in two, M5.7 given a bounded deliverable, M3.5's missing dep on M3.3 and M5.2's on M3.2 added, M5.3a's AC given the river back, the slow-test convention decided, and AGENTS.md's coverage row, Zustand wording and repository layout block brought in line with what the repo actually contains. Nothing from that review is outstanding.
 
 - The devcontainer now installs Bun via `ghcr.io/devcontainers-extra/features/bun:1`, but this has only been verified by tag resolution, not by an actual container rebuild. Confirm on the next rebuild; the Bun in the current container was curl-installed to `~/.bun/bin`.
 - M0.5 added `bunx playwright install --with-deps chromium` to the devcontainer's `postCreateCommand`, but it has never run: the browser in the current container was installed by hand, and `install-deps` needed `sudo`. Confirm on the same rebuild that checks the Bun feature above. (CI's browser step landed in M0.6.)

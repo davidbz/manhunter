@@ -126,8 +126,10 @@ The hunter view includes a belief distribution over nodes: seeded from confirmed
 
 ## End conditions
 
-- **Win:** capture. Score: turns taken, budget spent, civilian harm, trust remaining, captured alive.
-- **Lose:** criminal escapes via exit, trust hits 0, casualties ≥ threshold, or budget < 0.
+- **Win:** capture. Score: turns taken, budget spent, civilian harm, trust remaining. Captured alive becomes a component once an action can use force; no MVP action can, and capture is both sides on one node, so every MVP capture is alive and the bonus would be a constant added to every win.
+- **Lose:** criminal escapes via exit, trust hits 0, or casualties ≥ threshold.
+
+Budget is not an end condition. It is enforced when an action is planned: an action you cannot afford is rejected, so the balance never goes below 0 and running dry costs you the tools to act rather than the case. A bankruptcy loss needs an action billed after the fact (overtime, federal help, standing upkeep on a containment), and those are all post-MVP.
 
 ## After-action replay
 
