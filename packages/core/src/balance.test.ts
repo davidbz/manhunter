@@ -164,6 +164,26 @@ describe("reports", () => {
   });
 });
 
+describe("criminal pools", () => {
+  const pools = Object.values(BALANCE.criminal.pools);
+
+  it("only ever draws a profile that has weights to play with", () => {
+    const withWeights = Object.keys(BALANCE.criminal.profiles);
+    for (const pool of pools) {
+      for (const entry of pool) {
+        expect(withWeights).toContain(entry.value);
+      }
+    }
+  });
+
+  it("gives every difficulty something to draw", () => {
+    for (const pool of pools) {
+      expect(pool.length).toBeGreaterThan(0);
+      expect(pool.some((entry) => entry.weight > 0)).toBe(true);
+    }
+  });
+});
+
 describe("score weights", () => {
   it("scores only a capture on the outcome alone", () => {
     for (const [kind, base] of Object.entries(BALANCE.score.outcomeBase)) {

@@ -21,7 +21,8 @@ export type Clock = {
   readonly hour: Hour;
 };
 
-const HOURS_PER_DAY = 24;
+/** Exported because the start hour is drawn uniformly over a day (PLAN M3.1a). */
+export const HOURS_PER_DAY = 24;
 
 /**
  * The clock for a turn of a hunt that began at `startHour`. Wraps past midnight, and tolerates

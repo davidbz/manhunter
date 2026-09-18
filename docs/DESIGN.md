@@ -97,6 +97,8 @@ Move (foot/car/transit), hide, rest, change appearance, steal vehicle, ditch pho
 | `local` | knows back routes, accomplices hide them |
 | `planner` | pre-committed to a timed exit; the puzzle is which one |
 
+The player never picks a profile. Setup carries a **difficulty**, which names a weighted pool of profiles, and the seed draws from it. That is what lets the replay string stay player-visible without spoiling the hunt it replays.
+
 ### Decision model
 
 Utility-based: score candidate actions by (progress to exit) − (perceived risk) + (profile weights) + noise, then pick. The AI sees only what it would plausibly know: visible roadblocks, news briefings, helicopters overhead. Leaked information events can give it more.

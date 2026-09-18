@@ -5,7 +5,7 @@ export type {
   MapGenerationSettings,
 } from "./balance";
 export { BALANCE } from "./balance";
-export type { GameConfig, MapConfig } from "./config";
+export type { Difficulty, GameConfig, GameSetup, MapConfig } from "./config";
 export type {
   CriminalAction,
   CriminalKnowledge,
@@ -16,6 +16,8 @@ export { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
 export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
 export { createDistrictLogic } from "./districts";
 export type { GameEvent, GameEventKind } from "./events";
+export type { GameLogic, GameRequest, GameResult } from "./game";
+export { createGameLogic } from "./game";
 export type {
   AttemptFailure,
   GenerationLogic,
@@ -77,7 +79,7 @@ export { createRiverLogic } from "./river";
 export type { NonEmptyArray, Rng, RngDraw, RngState, Weighted } from "./rng";
 export { createRng } from "./rng";
 export type { Clock, Hour, TimeOfDay, Turn } from "./time";
-export { makeClock } from "./time";
+export { HOURS_PER_DAY, makeClock } from "./time";
 export type {
   GridCell,
   MapTopology,
