@@ -169,7 +169,6 @@ const OUTCOME_BASE: Readonly<Record<GameOutcome["kind"], number>> = {
   escaped: 0,
   trust_collapsed: 0,
   casualties_exceeded: 0,
-  bankrupt: 0,
 };
 
 export const BALANCE = {
@@ -260,7 +259,6 @@ export const BALANCE = {
     casualtiesToLose: 3,
     /** Trust at or below this ends the hunt: DESIGN.md "0 means removed from case". */
     trustCollapseAt: 0,
-    bankruptBelow: 0,
   },
 
   /**
@@ -273,7 +271,8 @@ export const BALANCE = {
    * asserts that, so tuning these cannot quietly invert the game's values.
    *
    * Political pressure is deliberately absent: it tracks the clock, and turns taken is already
-   * a component.
+   * a component. So is captured-alive: no MVP action can use force, so the flag would be `true`
+   * by construction and the bonus a constant on every win (PLAN "Decisions").
    */
   score: {
     outcomeBase: OUTCOME_BASE,
@@ -281,11 +280,6 @@ export const BALANCE = {
     budgetPenaltyPerUnit: 0.15,
     casualtyPenalty: 100,
     trustBonusPerPoint: 2,
-    /**
-     * `GameOutcome`'s `captured` variant carries no aliveness flag today, so M3.10 either adds
-     * one or drops this bonus. The weight is here because DESIGN.md lists the component.
-     */
-    capturedAliveBonus: 200,
     minimumScore: 0,
   },
 } as const;

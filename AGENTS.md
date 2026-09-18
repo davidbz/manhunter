@@ -20,10 +20,11 @@ Use the latest stable versions at the time you install. Do not pin to versions f
 | Language | TypeScript, `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true` |
 | Web build / dev server | Vite |
 | UI shell | React (function components + hooks only) |
-| UI state | Zustand (UI state only; game state lives in `core`) |
+| UI state | Zustand (UI state, plus the `SealedWorld` the store holds for `core` and cannot read; game logic lives in `core`) |
 | Map rendering | SVG via React for now; PixiJS may replace it later behind `MapRenderer` |
 | Lint + format | Biome (no ESLint, no Prettier) |
 | Unit / integration tests | Vitest |
+| Test coverage | `@vitest/coverage-v8`, bumped in lockstep with Vitest |
 | DOM environment for component tests | jsdom (`apps/web` project only) |
 | Property-based tests | fast-check (via `@fast-check/vitest`) |
 | End-to-end tests | Playwright |
@@ -45,14 +46,21 @@ manhunter/
 ├── biome.json
 ├── package.json            # Bun workspaces root
 ├── tsconfig.base.json
+├── tsconfig.tools.json     # type-checks the root configs no workspace includes
+├── vitest.config.ts        # one config, one project per workspace plus `tools`
+├── playwright.config.ts
+├── .github/                # ci.yml, dependabot.yml, local composite setup action
+├── .devcontainer/
 ├── docs/
 │   ├── DESIGN.md
 │   └── PLAN.md
+├── tools/
+│   └── biome/              # GritQL plugins and the architecture-rule test
 ├── packages/
 │   ├── core/               # pure simulation: types, rng, map, ai, events, turn loop
 │   └── sim/                # headless CLI: run games, batch balance reports
 └── apps/
-    └── web/                # Vite + React UI
+    └── web/                # Vite + React UI; e2e/ holds the Playwright specs
 ```
 
 ## Architecture rules (hard constraints)

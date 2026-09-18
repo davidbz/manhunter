@@ -84,7 +84,6 @@ const arbitraryOutcome: fc.Arbitrary<GameOutcome> = fc.oneof(
   arbitraryTurn.map((turn) => ({ kind: "escaped", turn }) as const),
   arbitraryTurn.map((turn) => ({ kind: "trust_collapsed", turn }) as const),
   arbitraryTurn.map((turn) => ({ kind: "casualties_exceeded", turn }) as const),
-  arbitraryTurn.map((turn) => ({ kind: "bankrupt", turn }) as const),
 );
 
 const arbitraryReport: fc.Arbitrary<Report> = fc
