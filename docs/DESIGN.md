@@ -28,7 +28,7 @@ One turn ≈ one in-game hour. A standard hunt starts at a random time of day an
 2. **Events** — random and triggered events fire, weighted by state (desperation, trust, time of day, reward level).
 3. **Planning** — the hunter spends action points (AP).
 4. **Resolution** — the criminal AI chooses its move from its own knowledge; both sides resolve simultaneously. Interactions (roadblock hit, drone spot, slip past) resolve here.
-5. **Consequences** — meters update, fatigue accrues, the clock advances, end conditions are checked.
+5. **Consequences** — meters update, the clock advances, end conditions are checked. (Fatigue accrual is post-MVP, with the meter itself.)
 
 ## The map
 
@@ -64,8 +64,8 @@ Generation is seeded. Invalid maps are rejected and regenerated with a derived s
 - **Action points** per turn.
 - **Budget** (helicopter, overtime, reward money).
 - **Public trust** 0–100. Low trust ⇒ fewer and worse witness reports. 0 ⇒ removed from case.
-- **Political pressure** 0–100, rises over time. High pressure triggers override events.
-- **Unit fatigue** per unit; tired units are less effective.
+- **Political pressure** 0–100, rises over time. High pressure triggers override events. The override events are post-MVP, so in the MVP pressure rises and is displayed and nothing reads it as a trigger yet. It is deliberately kept out of the score below: it rises with the clock, so scoring it would double-count turns taken.
+- **Unit fatigue** per unit; tired units are less effective. Post-MVP: no MVP action deploys a unit, so there is nothing for fatigue to accrue on.
 
 ## Hunter actions
 
@@ -129,7 +129,7 @@ The hunter view includes a belief distribution over nodes: seeded from confirmed
 
 ## After-action replay
 
-Stored as `{ seed, config, hunterActions[] }`. Replay reveals the criminal's true path over the hunter's heatmap, turn by turn.
+Stored as `{ seed, setup, hunterActions[] }`, where `setup` is the player-visible half of the configuration. The criminal's profile is *not* stored: it is derived from the seed, so a shared replay link does not spoil the hunt it replays. Replay reveals the criminal's true path over the hunter's heatmap, turn by turn.
 
 ## Visual direction (initial)
 
@@ -137,4 +137,4 @@ Stored as `{ seed, config, hunterActions[] }`. Replay reveals the criminal's tru
 
 ## Out of scope for MVP
 
-PvP, campaign mode, hostage negotiation, mobile layout, audio, portraits, save/load beyond replay strings.
+PvP, campaign mode, hostage negotiation, unit fatigue, mobile layout, audio, portraits, save/load beyond replay strings.
