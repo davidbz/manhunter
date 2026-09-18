@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { BALANCE } from "./balance";
 
+/** Jitter is a fraction of `nodeSpacing`; half a cell is where a node would leave its own. */
+const HALF_A_CELL = 0.5;
+
 const RATE_MIN = 0;
 const RATE_MAX = 1;
 
@@ -47,6 +50,20 @@ describe("the hunt is winnable and losable", () => {
   it("gives the criminal a route that takes turns but fits in the deadline", () => {
     expect(BALANCE.map.minEscapeTurns).toBeGreaterThan(1);
     expect(BALANCE.map.minEscapeTurns).toBeLessThan(BALANCE.time.maxTurns);
+  });
+
+  /**
+   * `river.ts` decides a node's bank from its grid cell but draws the water on the midline
+   * between cells. The two can only agree while jitter cannot push a node across that midline.
+   */
+  it("keeps a node inside its own cell, which is what lets the river be drawn on the midline", () => {
+    expect(BALANCE.map.positionJitter).toBeLessThan(HALF_A_CELL);
+    expect(BALANCE.map.positionJitter).toBeGreaterThanOrEqual(0);
+  });
+
+  it("asks for a bridge range a river can actually satisfy", () => {
+    expect(BALANCE.map.minBridges).toBeGreaterThan(0);
+    expect(BALANCE.map.maxBridges).toBeGreaterThanOrEqual(BALANCE.map.minBridges);
   });
 
   it("affords at least one action per turn", () => {

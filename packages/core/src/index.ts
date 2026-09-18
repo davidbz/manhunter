@@ -1,4 +1,9 @@
-export type { Balance, CriminalProfileWeights, DistrictProperties } from "./balance";
+export type {
+  Balance,
+  CriminalProfileWeights,
+  DistrictProperties,
+  MapGenerationSettings,
+} from "./balance";
 export { BALANCE } from "./balance";
 export type { GameConfig, MapConfig } from "./config";
 export type {
@@ -41,6 +46,7 @@ export type {
   RoadEdge,
   TravelCost,
   TravelMode,
+  TraversableGraph,
   TunnelEdge,
 } from "./map";
 export { makeEdge, makeExit, makeNode } from "./map";
@@ -56,10 +62,22 @@ export type {
   ReportTruth,
 } from "./report";
 export { HIDDEN_REPORT_FIELDS, makeReport, UNKNOWN_TRAVEL_MODE } from "./report";
+export type { RiverLogic, RiverRequest, RiverResult } from "./river";
+export { createRiverLogic } from "./river";
 export type { NonEmptyArray, Rng, RngDraw, RngState, Weighted } from "./rng";
 export { createRng } from "./rng";
 export type { Clock, Hour, TimeOfDay, Turn } from "./time";
 export { makeClock } from "./time";
+export type {
+  GridCell,
+  MapTopology,
+  River,
+  TopologyLogic,
+  TopologyNode,
+  TopologyRequest,
+  TopologyResult,
+} from "./topology";
+export { createTopologyLogic } from "./topology";
 export type { HunterReport, HunterView, RevealFrame } from "./view";
 export type { GameOutcome, WorldState } from "./world";
 export { IN_PROGRESS, makeWorldState } from "./world";
