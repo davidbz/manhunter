@@ -14,6 +14,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
+    "test:fast": "vitest run --project '!slow'",
     "test:e2e": "playwright test",
     "sim": "bun run --cwd packages/sim start",
     "verify": "bun run typecheck && bun run lint && bun run test"

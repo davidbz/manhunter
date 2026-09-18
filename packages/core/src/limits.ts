@@ -5,8 +5,16 @@
  * the loop, not here.
  */
 export const LIMITS = {
-  /** Map regeneration attempts before generate-until-valid gives up (PLAN M2.3). */
-  maxMapGenerationAttempts: 64,
+  /**
+   * Map regeneration attempts before generate-until-valid gives up (PLAN M2.3). Tuned from the
+   * placeholder 64 on measurement: 3000 default-grid seeds need a mean of 5.98 attempts (p99 25,
+   * p999 38, max 57), so 64 leaves only a factor of ~1.1 over the observed tail. The geometric
+   * rate that implies puts a spurious failure at 8.4e-6 per map, which is a 0.8% chance per
+   * 1000-game M4.2 batch - a real flake for M4.3 to chase. 128 puts it at 7e-11 instead.
+   * The headroom is close to free: the cap is only ever reached by a config that cannot work,
+   * and an impossible one (a 3x3 grid, which can carry no river) exhausts all 128 in under 2ms.
+   */
+  maxMapGenerationAttempts: 128,
   /**
    * Nodes a generated map may contain (PLAN M2.1a). `MapConfig` comes from the player-visible
    * setup and therefore from a replay string, so the grid is sized from untrusted input and the

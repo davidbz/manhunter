@@ -112,7 +112,7 @@ const createActionResolver = (deps: { graph: GraphLogic; trust: TrustLogic }): A
 
 - **Early return.** Handle invalid, empty, and terminal cases first and return. The main path is the least indented code in the function.
 - **Avoid `else`.** After an early return, `else` is unnecessary. Prefer guard clauses, lookup tables, and exhaustive `switch` on a `kind` discriminant. `else` is allowed only when both branches are genuinely symmetric and short; ternaries for simple value selection are fine. Biome's `noUselessElse` is on as an error.
-- Maximum nesting depth of 2 inside a function body.
+- Maximum nesting depth of 2 inside a function body. **Review-enforced, not lint-enforced:** Biome has no nesting-depth rule, and `noExcessiveCognitiveComplexity` (max 10) is a different constraint that a deeply nested but simple function can pass. Treat the depth cap as binding on you anyway; it is the rule the guard clauses above exist to satisfy.
 
 ### 4. No magic numbers or strings
 
@@ -162,7 +162,8 @@ bun run build        # build all workspaces
 bun run typecheck    # tsc --noEmit across workspaces
 bun run lint         # biome check .
 bun run format       # biome check --write .
-bun run test         # vitest run (all workspaces)
+bun run test         # vitest run (all workspaces, slow tests included)
+bun run test:fast    # same minus the `slow` project, for the inner loop
 bun run test:e2e     # playwright
 bun run sim -- --games 1000 --profile amateur --seed 1
 bun run verify       # typecheck + lint + test (run before finishing any task)

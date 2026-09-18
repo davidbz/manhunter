@@ -62,7 +62,7 @@ export type GraphLogic = {
   /**
    * Every node's neighbours in one pass. `neighbors` builds this and throws the rest away, which
    * is O(edges) per lookup; anything that walks the whole graph (PLAN M1.4b's residual network,
-   * M5.1's belief spread) should take the map once instead.
+   * M3.6b's belief spread) should take the map once instead.
    */
   readonly adjacency: (traversal: Traversal) => Adjacency;
   readonly shortestPath: (traversal: Traversal, from: NodeId, to: NodeId) => PathResult;

@@ -26,7 +26,7 @@ export type ReportContent =
       readonly nodeId: NodeId;
       readonly travelMode: TravelMode | typeof UNKNOWN_TRAVEL_MODE;
     }
-  /** Negative evidence: somewhere looked at, nothing found. The heatmap (PLAN M5.1) needs it. */
+  /** Negative evidence: somewhere looked at, nothing found. The heatmap (PLAN M3.6b) needs it. */
   | { readonly kind: "no_sighting"; readonly nodeId: NodeId };
 
 /**

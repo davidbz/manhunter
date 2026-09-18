@@ -17,6 +17,13 @@ export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts
 export { createDistrictLogic } from "./districts";
 export type { GameEvent, GameEventKind } from "./events";
 export type {
+  AttemptFailure,
+  GenerationLogic,
+  GenerationRequest,
+  GenerationResult,
+} from "./generate";
+export { createGenerationLogic } from "./generate";
+export type {
   Adjacency,
   GraphLogic,
   Neighbor,
