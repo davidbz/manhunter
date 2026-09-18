@@ -78,6 +78,8 @@ export type { RiverLogic, RiverRequest, RiverResult } from "./river";
 export { createRiverLogic } from "./river";
 export type { NonEmptyArray, Rng, RngDraw, RngState, Weighted } from "./rng";
 export { createRng } from "./rng";
+export type { SealedWorld } from "./sealed";
+export { unseal } from "./sealed";
 export type { Clock, Hour, TimeOfDay, Turn } from "./time";
 export { HOURS_PER_DAY, makeClock } from "./time";
 export type {

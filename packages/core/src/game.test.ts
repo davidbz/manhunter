@@ -10,6 +10,7 @@ import { LIMITS } from "./limits";
 import { createMinCutLogic } from "./mincut";
 import { createRiverLogic } from "./river";
 import { createRng } from "./rng";
+import { unseal } from "./sealed";
 import { HOURS_PER_DAY } from "./time";
 import { createTopologyLogic } from "./topology";
 import { createValidatorLogic } from "./validator";
@@ -46,7 +47,7 @@ const worldFor = (seed: number, setup: GameSetup = SETUP) => {
   if (result.kind !== "game") {
     throw new Error(`expected a game, got ${result.kind}`);
   }
-  return result.world;
+  return unseal(result.world);
 };
 
 describe("starting a hunt", () => {
@@ -180,7 +181,7 @@ describe("the criminal profile is drawn from the difficulty's pool", () => {
     if (result.kind !== "game") {
       throw new Error(`expected a game, got ${result.kind}`);
     }
-    return result.world.config;
+    return unseal(result.world).config;
   };
 
   const profileFor = (seed: number, setup: GameSetup = SETUP): string =>

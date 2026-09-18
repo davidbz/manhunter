@@ -378,12 +378,20 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `game.ts` is at 100% statements, branches, functions and lines; `core` overall 99.2% statements / 94.8% branches.
   - `bun run verify` passes; 289 tests, zero lint output. The suite went from 4.4s to 10.1s, almost all of it the two `fc.integer()` property tests that build a real map per run. Still six times inside the 60s trigger the slow-test convention names, so nothing moved to the `slow` project.
 
-- [ ] **M3.1b Sealing the world**
+- [x] **M3.1b Sealing the world**
   deps: M3.1a
   **Seals the world, per architecture rule 4.** Declare `SealedWorld` in `core`: a branded alias of `WorldState` with no readable members, plus internal `seal`/`unseal` that `core` alone calls. `core` exports its game functions over `SealedWorld` (`toHunterView`, `step`, reveal frames), so M5.2 has a legal way to hold a game between turns. **There is one signature, not two:** every exported game function takes and returns `SealedWorld`. `seal` stays internal to `core`; `unseal(world) => WorldState` is **exported**, because `sim` is a balance tool with no hidden-information concern and would otherwise hold a world it could not step. `web` is held to the sealed form by the `biome.json` deny list, which `unseal` joins. See "How `sim` reaches inside a sealed world" below.
   Add `GameConfig` and `unseal` to that deny list, with a fixture each in `tools/biome/architecture-rules.test.ts`, exactly as M1.2 did for `Report`.
   `create` returns `WorldState` after M3.1a and `SealedWorld` after this task; that one return type is the whole churn the split costs.
   AC: a type-level test asserts `SealedWorld` exposes no members and that a plain `WorldState` is not assignable to it; `apps/web` importing `unseal` or `GameConfig` fails lint.
+  Notes:
+  - **The brand key is a `declare const SEAL: unique symbol` that `core` does not export**, so `SealedWorld` is `{ readonly [SEAL]: "world" }` and has no nameable member at all. An intersection brand (`WorldState & { ... }`) was the obvious alternative and is wrong here: it leaves every member of the world readable, which is the half of the AC that matters.
+  - **Both conversions are assertions over one value, not a wrapper.** A wrapper would be a stronger seal but it cannot survive `JSON.stringify`, and AGENTS.md rule 4 requires that it does, because a replay serializes the game it stores. `sealed.test.ts` pins that trade-off directly: `JSON.stringify(seal(world))` must equal `JSON.stringify(world)`.
+  - `seal` is exported from `sealed.ts` but **not** from `index.ts`; `unseal` is exported from both. That is the whole of "internal to `core`" - there is no other mechanism, and `game.ts` is currently the only caller of `seal`.
+  - `GameResult`'s `game` variant now carries `SealedWorld`, which is the only churn M3.1a's split cost. `game.test.ts` reaches its assertions through `unseal`, which also pins the seal from the other side: if `create` ever returned a bare `WorldState` again, those `unseal` calls stop compiling.
+  - **Consequence for M3.2 and M3.8a:** `toHunterView` and `step` take and return `SealedWorld` per the one-signature rule, so both call `unseal`/`seal` internally. `toHunterView` still takes no deps and reads no balance, so it stays a bare function (the wiring decision below).
+  - Verified by mutation, 4 mutants, 4 caught: unbranding `SealedWorld` to a plain alias of `WorldState` fails all four type-level assertions at `bun run typecheck`; making `seal`/`unseal` a consistent runtime wrapper fails the bytes test; dropping `unseal` or `GameConfig` from the `biome.json` deny list each fails its own fixture in `tools/biome/architecture-rules.test.ts`.
+  - `bun run verify` passes; 295 tests, zero lint output. `core` coverage unchanged at 99.2% statements / 94.8% branches.
 
 - [ ] **M3.2 Hunter view**
   deps: M3.1b
