@@ -137,6 +137,8 @@
                       "WorldState",
                       "CriminalState",
                       "CriminalKnowledge",
+                      "CriminalSituation",
+                      "toCriminalSituation",
                       "Report",
                       "GameConfig",
                       "unseal",

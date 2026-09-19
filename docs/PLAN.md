@@ -466,11 +466,20 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `report.ts` and `hunter.ts` at 100% across the board; `actions.ts` unchanged at 100% statements/functions/lines, 95.83% branches. `core` overall 99.34% statements / 95.05% branches.
   - `bun run verify` passes; 371 tests, zero lint output.
 
-- [ ] **M3.5 Criminal AI: amateur**
+- [x] **M3.5 Criminal AI: amateur**
   deps: M3.1a, M3.3
   Utility-based chooser per DESIGN.md. Criminal only reasons over what it can know (visible roadblocks, briefings).
   M3.3 added to deps at the pre-M2.2 review: "never moves through a known roadblock" needs roadblocks to exist, and M1.4a's note puts them in `Traversal.blockedEdgeIds`, which M3.3 adds. Nothing upstream of this task produced one.
   AC: on an open map with no hunter actions, reaches an exit in ≤ path length + slack; never moves through a known roadblock; decisions deterministic per seed.
+  Notes:
+  - **`createCriminalAiLogic({ rng, graph }).choose({ situation, balance, state })`**, following M3.1a's request-object convention. The situation is a **`CriminalSituation`**, not a `WorldState`: map, clock and `criminal` only, produced by the one projection `toCriminalSituation`. This is the mirror of `view.ts` - "only reasons over what it can know" is a type rather than a discipline, and `ai.test.ts` pins the absent keys the way `view.test.ts` does. Both names are on `apps/web`'s `noRestrictedImports` list in `biome.json`, because a situation carries the true position.
+  - **Resolves M3.1a's "Consequence for M3.5" above:** `balance.criminal.profiles` is now partial (`Partial<Record<CriminalProfile, CriminalProfileWeights>>` with `amateur` pinned present), so the lookup returns `| undefined` and the AI must handle a miss. A profile with no weights has no behaviour and **waits** - total, cheap, and better than borrowing another profile's nerve or throwing inside a pure turn loop. `balance.test.ts`'s pooled-profile assertion still makes it unreachable for any world `createGameLogic` builds. **M6 adds a profile by adding a row to `PROFILES`.**
+  - **"Never moves through a known roadblock" is structural.** `knowledge.knownRoadblockEdgeIds` goes into `Traversal.blockedEdgeIds` (M1.4a's seam), so blocked edges are absent from both the neighbour enumeration and every distance measured - there is no check to forget. **Nothing populates that list yet; M3.8b's "a criminal moving into a roadblocked edge is stopped" is what does**, and the AI needs no change when it lands.
+  - **Briefings are read through heat, not as a term of their own.** M3.4b's `applyTrueBriefing` raises heat, heat scales every perceived exposure, so a second term for the same broadcast would count it twice. `heardBriefingTurns` therefore stays unread by this task, as M3.4b's note anticipated it might not be.
+  - **New shared module `exposure.ts`**, holding `districtPropertiesAt` and `witnessDensityAt` moved out of `actions.ts`. The witnesses and the criminal's nerve have to agree about how busy downtown is at 03:00 or they are two rules wearing one name. Both take a balance slice (`DistrictTable`, `DaylightHours`) rather than `Balance`, for the cycle reason in M3.4a's note.
+  - **`LIMITS.maxAiCandidates` is consumed** and no longer dead: three stationary candidates (hide, rest, wait) plus as many moves as fit under the cap. A node with more exits than that is a generator bug, not a workload. **Every candidate costs exactly one `rng.float` in enumeration order, win or lose**, so the stream position after a decision depends on the candidate count and not on which one won; the determinism tests count draws.
+  - **Slack in the escape test is 2, measured not guessed.** Over 300 generated seeds, 298 criminals reached an exit in exactly the shortest number of steps and 2 took one extra. The test itself uses the hard-coded seed list `[1, 2, 3, 5, 8, 13, 21, 34]`, per the repo rule against generated seed sets.
+  - `ai.ts` and `exposure.ts` are at 100% statements, branches, functions and lines; `actions.ts` rose to 100% branches as a side effect of `exposure.test.ts`. `core` overall 99.38% statements / 95.59% branches. `bun run verify` passes; 399 tests, zero lint output.
 
 - [ ] **M3.6 Reports and pranks**
   deps: M3.4b, M3.5

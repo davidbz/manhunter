@@ -9,6 +9,13 @@ export type {
 } from "./actions";
 export { createActionLogic, targetKindOf } from "./actions";
 export type {
+  CriminalAiLogic,
+  CriminalAiRequest,
+  CriminalDecision,
+  CriminalSituation,
+} from "./ai";
+export { createCriminalAiLogic, toCriminalSituation } from "./ai";
+export type {
   Balance,
   CriminalProfileWeights,
   DistrictProperties,
@@ -27,6 +34,8 @@ export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts
 export { createDistrictLogic } from "./districts";
 export type { GameEvent, GameEventKind, HiddenEvent, HiddenEventKind } from "./events";
 export { HIDDEN_EVENT_KINDS } from "./events";
+export type { DistrictTable } from "./exposure";
+export { districtPropertiesAt, witnessDensityAt } from "./exposure";
 export type { GameLogic, GameRequest, GameResult } from "./game";
 export { createGameLogic } from "./game";
 export type {

@@ -110,14 +110,26 @@ const AMATEUR: CriminalProfileWeights = {
 };
 
 /**
+ * Which profiles have behaviour of their own. Partial because only `amateur` does, for the reason
+ * M1.3 gave for not inventing the other three: weights for behaviour that does not exist are
+ * balance nobody can tune. `amateur` is named separately because the AI's lookup is by
+ * `CriminalState.profile` and therefore has to be total - a profile the table has no row for has
+ * no behaviour and waits (PLAN M3.5) - while every pool does draw a profile that has one.
+ */
+type CriminalProfiles = Readonly<Partial<Record<CriminalProfile, CriminalProfileWeights>>> & {
+  readonly amateur: CriminalProfileWeights;
+};
+
+const PROFILES: CriminalProfiles = { amateur: AMATEUR };
+
+/**
  * Which criminal a difficulty may put in the city. The hunt draws from the pool for its setup's
  * difficulty (PLAN M3.1a), so the profile is a consequence of the seed and never of a player
  * choice, which is what keeps a shared replay link from spoiling the hunt it replays.
  *
- * All three pools name `amateur` alone because it is the only profile with weights above, for the
- * reason M1.3 gave for not inventing the other three: weights for behaviour that does not exist
- * are balance nobody can tune. PLAN M6 is what makes these rows differ. `balance.test.ts` pins the
- * invariant that a pooled profile always has weights.
+ * All three pools name `amateur` alone because it is the only profile `PROFILES` gives behaviour
+ * to. PLAN M6 is what makes these rows differ. `balance.test.ts` pins the invariant that a pooled
+ * profile always has weights, which is what keeps `ai.ts`'s no-behaviour case out of a real hunt.
  *
  * Annotated rather than inferred, for the same reason `MAP` is: a test and a balance sweep both
  * need to vary a pool without the literal types of the rest rejecting it.
@@ -280,7 +292,7 @@ export const BALANCE = {
     startingDesperation: 10,
     desperationMax: 100,
     desperationPerTurn: 2,
-    profiles: { amateur: AMATEUR },
+    profiles: PROFILES,
     pools: CRIMINAL_POOLS,
   },
 
