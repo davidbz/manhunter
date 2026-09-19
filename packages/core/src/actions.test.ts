@@ -364,14 +364,6 @@ describe("apply", () => {
     expect(current.hunter.budget).toBe(0);
     expect(rejections).toBe(MAX_SPEND_ATTEMPTS - CANVASS_ONLY_BUDGET / CANVASS.budgetCost);
   });
-
-  /** PLAN M3.4b owns the briefing's effects; what it inherits working is the billing. */
-  it("bills the briefing whose effects are still to come, and changes nothing else", () => {
-    const after = applied({ world, action: { kind: "true_briefing" }, balance: BALANCE });
-
-    expect(after.hunter.actionPoints).toBeLessThan(START_ACTION_POINTS);
-    expect({ ...after, hunter: world.hunter }).toEqual(world);
-  });
 });
 
 const CCTV = BALANCE.actions.pullCctv;
@@ -572,6 +564,68 @@ describe("pull_cctv", () => {
     expect(after.reports).toEqual([]);
     expect(after.hunter.budget).toBe(START_BUDGET - CCTV.budgetCost);
     expect(after.rng).not.toEqual(world.rng);
+  });
+});
+
+describe("true_briefing", () => {
+  const brief: HunterAction = { kind: "true_briefing" };
+  const BRIEFING = BALANCE.actions.trueBriefing;
+
+  /** How many of the seeds find somebody to talk to, for a hunter who has briefed this often. */
+  const talkers = (briefingTurns: readonly number[]): number =>
+    SEEDS.filter(
+      (seed) =>
+        applied({
+          world: worldAt({ hunter: hunterWith({ briefingTurns }), seed }),
+          action: canvassDowntown,
+          balance: BALANCE,
+        }).reports.length > 0,
+    ).length;
+
+  it("is recorded on both sides: the hunter gave it, the criminal watched it", () => {
+    const after = applied({ world, action: brief, balance: BALANCE });
+
+    expect(after.hunter.briefingTurns).toEqual([TURN]);
+    expect(after.criminal.knowledge.heardBriefingTurns).toEqual([TURN]);
+  });
+
+  it("buys public standing and costs the criminal their anonymity", () => {
+    const after = applied({ world, action: brief, balance: BALANCE });
+
+    expect(after.hunter.trust).toBe(START_TRUST + BRIEFING.trustGain);
+    expect(after.criminal.heat).toBe(world.criminal.heat + BRIEFING.criminalHeatGain);
+  });
+
+  it("caps heat at its maximum rather than letting a gain push it over", () => {
+    const notorious: WorldState = {
+      ...world,
+      criminal: { ...world.criminal, heat: BALANCE.criminal.heatMax },
+    };
+    const after = applied({ world: notorious, action: brief, balance: BALANCE });
+
+    expect(after.criminal.heat).toBe(BALANCE.criminal.heatMax);
+  });
+
+  /** Talking to the press is not looking for the criminal, so it draws nothing and finds nothing. */
+  it("files no report of its own and leaves the stream where it was", () => {
+    const after = applied({ world, action: brief, balance: BALANCE });
+
+    expect(after.reports).toEqual([]);
+    expect(after.rng).toEqual(world.rng);
+  });
+
+  /**
+   * The volume multiplier, isolated: the two hunters differ only in having spoken to the press,
+   * so the trust the briefing also buys cannot be what moves the count. Both canvasses roll the
+   * same number at the same seed, because a briefing does not touch the stream.
+   */
+  it("brings more people forward on a later canvass than an unbriefed hunter finds", () => {
+    expect(talkers([TURN - 1])).toBeGreaterThan(talkers([]));
+  });
+
+  /** Attention is bought once: a second briefing buys standing and notoriety, not more tips. */
+  it("does not multiply the volume again for a second briefing", () => {
+    expect(talkers([TURN - 2, TURN - 1])).toBe(talkers([TURN - 1]));
   });
 });
 

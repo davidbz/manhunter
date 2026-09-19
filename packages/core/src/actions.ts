@@ -27,6 +27,7 @@ import {
   nextReportId,
   type ReportContent,
   type ReportSource,
+  reportVolumeFactor,
   sightingAccuracy,
 } from "./report";
 import type { Rng, RngDraw, RngState } from "./rng";
@@ -154,18 +155,36 @@ const applyRoadblock: ActionApply<ActionOf<"roadblock">> = (_deps, { world, bala
   },
 });
 
-/**
- * `true_briefing` has no target to object to, and its effect is still only its cost: PLAN M3.4b
- * adds the report-volume multiplier and the criminal's heat. The table is keyed by
- * `HunterActionKind`, so it cannot be left out and still compile, and what it already does right
- * is charge - the trust gain included, since that is the signed `trustChange` every entry has.
- */
+/** `true_briefing` is global: there is no target for a rule of its own to object to. */
 const noObjection = (): null => null;
 
-const unchanged = <Action extends HunterAction>(
-  _deps: ActionDeps,
-  { world }: ActionContext<Action>,
-): WorldState => world;
+/**
+ * One broadcast, three marks on the world, and none of them the trust gain: that is the signed
+ * `trustChange` the framework has already applied to the world this handler is given.
+ *
+ * The hunter records having spoken, which is what `CANVASS` scales its volume by below. The
+ * criminal records having watched, because DESIGN.md's AI reasons over what it can know and a
+ * press conference is public. And being on every screen in the city is what raises their heat,
+ * which is recognisability rather than guilt.
+ */
+const applyTrueBriefing: ActionApply<ActionOf<"true_briefing">> = (_deps, { world, balance }) => ({
+  ...world,
+  hunter: {
+    ...world.hunter,
+    briefingTurns: [...world.hunter.briefingTurns, world.clock.turn],
+  },
+  criminal: {
+    ...world.criminal,
+    heat: Math.min(
+      world.criminal.heat + balance.actions.trueBriefing.criminalHeatGain,
+      balance.criminal.heatMax,
+    ),
+    knowledge: {
+      ...world.criminal.knowledge,
+      heardBriefingTurns: [...world.criminal.knowledge.heardBriefingTurns, world.clock.turn],
+    },
+  },
+});
 
 type NodeAction = ActionOf<"canvass"> | ActionOf<"pull_cctv">;
 
@@ -287,14 +306,19 @@ const CANVASS_DELAY: Turn = 0;
 
 /**
  * How many people talk is the district's witness density scaled by the hunter's standing with
- * the public, which is DESIGN.md's "low trust means fewer witness reports" taken literally; how
- * far they can be trusted is `sightingAccuracy`, which is the "and worse" half.
+ * the public, which is DESIGN.md's "low trust means fewer witness reports" taken literally, and
+ * by how much the city is paying attention, which is what a briefing buys; how far they can be
+ * trusted is `sightingAccuracy`, which is the "and worse" half.
+ *
+ * Only the witnesses hear the news. A camera films whatever walks past it whether or not the
+ * hunt is on television, so `PULL_CCTV` has no volume term.
  */
 const CANVASS: IntelSource = {
   source: "witness",
   chance: ({ world, balance, properties }) =>
     witnessDensityAt(balance, properties, world.clock.hour) *
-    trustFactorOf(balance, world.hunter.trust),
+    trustFactorOf(balance, world.hunter.trust) *
+    reportVolumeFactor(balance.actions.trueBriefing, world.hunter.briefingTurns.length),
   accuracy: ({ world, balance }) =>
     sightingAccuracy(balance.reports, trustFactorOf(balance, world.hunter.trust)),
   delay: (_rng, _lookout, state) => ({ state, value: CANVASS_DELAY }),
@@ -357,7 +381,7 @@ const ACTION_TABLE: ActionTable = {
     }),
     trustChange: (balance) => balance.actions.trueBriefing.trustGain,
     validate: noObjection,
-    apply: unchanged,
+    apply: applyTrueBriefing,
   },
 };
 

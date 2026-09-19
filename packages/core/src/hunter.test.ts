@@ -8,7 +8,7 @@ const START_BUDGET = 1000;
 const START_TRUST = 60;
 const START_PRESSURE = 10;
 
-const input: Omit<HunterState, "containments"> = {
+const input: Omit<HunterState, "containments" | "briefingTurns"> = {
   actionPoints: START_ACTION_POINTS,
   budget: START_BUDGET,
   trust: START_TRUST,
@@ -33,18 +33,20 @@ const targetOf = (action: HunterAction): string => {
 };
 
 describe("makeHunterState", () => {
-  it("starts with nothing deployed", () => {
+  it("starts with nothing deployed and nothing said", () => {
     expect(makeHunterState(input).containments).toEqual([]);
+    expect(makeHunterState(input).briefingTurns).toEqual([]);
   });
 
   it("keeps the resources it was given", () => {
-    expect(makeHunterState(input)).toEqual({ ...input, containments: [] });
+    expect(makeHunterState(input)).toEqual({ ...input, containments: [], briefingTurns: [] });
   });
 
   it("round-trips through JSON with a standing roadblock (architecture rule 3)", () => {
     const hunter: HunterState = {
       ...makeHunterState(input),
       containments: [{ kind: "roadblock", edgeId: makeEdgeId("e1"), expiresAt: 7 }],
+      briefingTurns: [2, 5],
     };
     expect(JSON.parse(JSON.stringify(hunter))).toEqual(hunter);
   });

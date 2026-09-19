@@ -28,6 +28,16 @@ export type HunterState = {
   /** Political pressure, 0-100. Rises over time. */
   readonly pressure: number;
   readonly containments: readonly Containment[];
+  /**
+   * When the hunter went to the press. Media attention is what a briefing buys, and it outlives
+   * the turn it was bought in: `actions.ts` reads the count to scale how many people come
+   * forward, and PLAN M3.6 reads it again for the pranks that come with them.
+   *
+   * The criminal's own record of the same broadcasts is `CriminalKnowledge.heardBriefingTurns`.
+   * Two lists rather than one because they are two facts: what the hunter said, and what the
+   * criminal picked up. A fake briefing (PLAN M6) is the first without being the second.
+   */
+  readonly briefingTurns: readonly Turn[];
 };
 
 /** The MVP subset from DESIGN.md "Hunter actions". PLAN M3.3 and M3.4 give each an entry. */
@@ -39,10 +49,13 @@ export type HunterAction =
 
 export type HunterActionKind = HunterAction["kind"];
 
-/** A hunter at the start of a hunt: resources as given, nothing deployed. */
-export const makeHunterState = (input: Omit<HunterState, "containments">): HunterState => ({
+type HunterStateInput = Omit<HunterState, "containments" | "briefingTurns">;
+
+/** A hunter at the start of a hunt: resources as given, nothing deployed and nothing said. */
+export const makeHunterState = (input: HunterStateInput): HunterState => ({
   ...input,
   containments: [],
+  briefingTurns: [],
 });
 
 /**

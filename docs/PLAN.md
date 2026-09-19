@@ -451,11 +451,20 @@ Legend: **deps** = tasks that must be done first. **AC** = acceptance criteria (
   - `report.ts` and `time.ts` at 100% across the board; `actions.ts` 100% statements/functions/lines, 95.83% branches (the fallback above). `core` overall 99.34% statements / 95.01% branches.
   - `bun run verify` passes; 363 tests, zero lint output.
 
-- [ ] **M3.4b True briefing**
+- [x] **M3.4b True briefing**
   deps: M3.4a
   Raises report volume and criminal heat, gains trust.
   Small on purpose and left standalone rather than folded into M3.6, because it is the one MVP action feeding two later tasks from opposite sides: M3.6's report-volume formula and M3.5's criminal knowledge (DESIGN.md: the AI sees news briefings).
   AC: the volume multiplier changes how many reports a turn produces; criminal heat and trust both move by their `balance.actions.trueBriefing` amounts.
+  Notes:
+  - **Two records of the same broadcast, on purpose.** `HunterState.briefingTurns` is what the hunter said; `CriminalKnowledge.heardBriefingTurns` is what the criminal picked up. They are identical in the MVP because a true briefing is public, and they are still two fields because M6's fake briefing is the first without being the second. **M3.5 reads the criminal's list, M3.6 reads the hunter's**; neither should reach across.
+  - **The volume multiplier is flat, not compounding.** `reportVolumeFactor(settings, briefings)` in `report.ts` is `1` until the hunt has been on the news and the multiplier after, however many briefings were given. `multiplier ** briefings` would make the one free action the whole game, and a briefing is free precisely so a broke hunter is never stuck (M3.3's note). **M3.6 owns the formula**; it lives beside `sightingAccuracy` so the world's own sightings can scale by the same term.
+  - **Only the witnesses hear the news.** `CANVASS.chance` gained the volume term, `PULL_CCTV` did not: a camera films whatever walks past it whether or not there was a press conference. No clamp on the product - a chance above one behaves as certainty against `rng.float`, which is what `CERTAIN_DENSITY` in the tests already relies on, and a clamp would be a branch with no observable effect.
+  - **`balance.reports.prankRatePerBriefing` stays unconsumed and belongs to M3.6**, with `falseReportRate`. More tips is this task; the pranks that come with them are the same formula from the other end.
+  - **The briefing draws nothing**, so the stream is where it was. That is what lets the volume test compare a briefed and an unbriefed hunter at the same seed and know the difference is the multiplier and not a different roll: the trust the briefing also gains would otherwise move the canvass chance too, so the test varies `briefingTurns` alone.
+  - Verified by mutation: **7 mutants, 7 caught.** Dropping the volume term from the canvass chance, forgetting to record the briefing on either side, no heat gain, heat uncapped, a compounding volume factor, and a hunter who starts already briefed - each failed between 1 and 3 named tests.
+  - `report.ts` and `hunter.ts` at 100% across the board; `actions.ts` unchanged at 100% statements/functions/lines, 95.83% branches. `core` overall 99.34% statements / 95.05% branches.
+  - `bun run verify` passes; 371 tests, zero lint output.
 
 - [ ] **M3.5 Criminal AI: amateur**
   deps: M3.1a, M3.3

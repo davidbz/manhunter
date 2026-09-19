@@ -90,11 +90,13 @@ export type {
   ReportInput,
   ReportSource,
   ReportTruth,
+  VolumeSettings,
 } from "./report";
 export {
   HIDDEN_REPORT_FIELDS,
   makeReport,
   nextReportId,
+  reportVolumeFactor,
   sightingAccuracy,
   UNKNOWN_TRAVEL_MODE,
 } from "./report";

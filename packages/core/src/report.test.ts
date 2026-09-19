@@ -6,6 +6,7 @@ import {
   HIDDEN_REPORT_FIELDS,
   makeReport,
   nextReportId,
+  reportVolumeFactor,
   sightingAccuracy,
   UNKNOWN_TRAVEL_MODE,
 } from "./report";
@@ -99,6 +100,24 @@ describe("sightingAccuracy", () => {
 
     expect(sightingAccuracy(generous, 1)).toBe(settings.maxAccuracy);
     expect(sightingAccuracy(stingy, 1)).toBe(settings.minAccuracy);
+  });
+});
+
+describe("reportVolumeFactor", () => {
+  const settings = { reportVolumeMultiplier: 1.5 };
+
+  it("leaves the volume alone until the hunt has been on the news", () => {
+    expect(reportVolumeFactor(settings, 0)).toBe(1);
+  });
+
+  it("raises it by the briefing's multiplier once it has", () => {
+    expect(reportVolumeFactor(settings, 1)).toBe(settings.reportVolumeMultiplier);
+  });
+
+  /** Attention the city is already paying cannot be bought twice (PLAN M3.4b). */
+  it("does not compound, however many briefings are given", () => {
+    expect(reportVolumeFactor(settings, 2)).toBe(settings.reportVolumeMultiplier);
+    expect(reportVolumeFactor(settings, 10)).toBe(settings.reportVolumeMultiplier);
   });
 });
 

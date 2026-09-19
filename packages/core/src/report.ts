@@ -101,6 +101,25 @@ export const sightingAccuracy = (settings: AccuracySettings, trustFactor: number
     settings.maxAccuracy,
   );
 
+/** The part of `balance.actions.trueBriefing` that report volume turns on. */
+export type VolumeSettings = {
+  readonly reportVolumeMultiplier: number;
+};
+
+const NO_BRIEFINGS = 0;
+const UNBRIEFED_VOLUME = 1;
+
+/**
+ * How much more the public comes forward once the hunt has been on the news. DESIGN.md "Media":
+ * a briefing buys tips, and pranks are the other half of the same bargain (PLAN M3.6).
+ *
+ * Flat rather than compounding per briefing: attention the city is already paying cannot be
+ * bought twice, and a multiplier raised to the number of briefings would make repeating the one
+ * free action the whole game. PLAN M3.6 is where the world's own sightings scale by this too.
+ */
+export const reportVolumeFactor = (settings: VolumeSettings, briefings: number): number =>
+  briefings === NO_BRIEFINGS ? UNBRIEFED_VOLUME : settings.reportVolumeMultiplier;
+
 const REPORT_ID_PREFIX = "report-";
 
 /**
