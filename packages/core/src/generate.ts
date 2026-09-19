@@ -153,7 +153,7 @@ export const createGenerationLogic = (deps: GenerationDeps): GenerationLogic => 
   generate: (request) => {
     const cap = Math.max(1, Math.floor(request.maxAttempts ?? LIMITS.maxMapGenerationAttempts));
     let latest = step(deps, request, 0);
-    for (let index = 1; index < cap && latest.kind === "retry"; index++) {
+    for (let index = 1; index < cap && latest.kind === "retry"; index += 1) {
       latest = step(deps, request, index);
     }
     if (latest.kind === "done") {

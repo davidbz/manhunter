@@ -12,7 +12,7 @@
 
 import type { Difficulty, MapConfig } from "./config";
 import type { CriminalProfile } from "./criminal";
-import type { DistrictType, EdgeKind, EdgeProperties } from "./map";
+import type { DistrictType, EdgeKind, EdgeProperties, TravelMode } from "./map";
 import type { NonEmptyArray, Weighted } from "./rng";
 import type { GameOutcome } from "./world";
 
@@ -138,10 +138,16 @@ const DEFAULT_MAP: MapConfig = { columns: 8, rows: 6, exitCount: 3 };
 export type MapGenerationSettings = {
   readonly defaults: MapConfig;
   /**
-   * DESIGN.md "Generation validity": the criminal must need this many turns to reach an exit.
-   * Measured **on foot** (PLAN "Decisions"), which is the criminal's only MVP travel mode and
-   * the only mode under which the threshold is reachable on a default-sized grid at all.
+   * The mode every generated distance is measured in: `minEscapeTurns`, the connectivity checks
+   * the generator makes while pruning and bridging, and how far a border node is from the crime
+   * scene before it may become an exit. One knob rather than one constant per module, because
+   * PLAN "Decisions" settled it once and a second copy is a second thing to keep in step.
+   *
+   * **Foot**, the criminal's only MVP travel mode and the only mode under which
+   * `minEscapeTurns` is reachable on a default-sized grid at all.
    */
+  readonly escapeMode: TravelMode;
+  /** DESIGN.md "Generation validity": the criminal must need this many turns to reach an exit. */
   readonly minEscapeTurns: number;
   /** One roadblock never wins. */
   readonly minCutToExits: number;
@@ -169,6 +175,7 @@ export type MapGenerationSettings = {
 
 const MAP: MapGenerationSettings = {
   defaults: DEFAULT_MAP,
+  escapeMode: "foot",
   minEscapeTurns: 6,
   minCutToExits: 2,
   minBridges: 2,

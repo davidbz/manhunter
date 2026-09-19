@@ -125,6 +125,12 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
+                "patterns": [
+                  {
+                    "group": ["@manhunter/sim"],
+                    "message": "apps/web depends on core only; sim is a sibling leaf (architecture rule 5)."
+                  }
+                ],
                 "paths": {
                   "@manhunter/core": {
                     "importNames": [
@@ -133,11 +139,35 @@
                       "CriminalKnowledge",
                       "Report",
                       "GameConfig",
-                      "unseal"
+                      "unseal",
+                      "makeWorldState",
+                      "makeCriminalState",
+                      "makeReport",
+                      "EMPTY_CRIMINAL_KNOWLEDGE"
                     ],
                     "message": "apps/web only ever receives HunterView. Hidden state stays in core (architecture rule 4)."
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/sim/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@manhunter/web", "react", "react-*", "zustand"],
+                    "message": "packages/sim depends on core only; web is a sibling leaf (architecture rule 5)."
+                  }
+                ]
               }
             }
           }

@@ -10,9 +10,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * the expected diagnostic comes back, so a config edit that silently stops enforcing a rule
  * fails the build.
  *
- * Rule 2's other half - same seed produces a byte-identical final state - cannot be tested
- * until the RNG (M1.1) and `step` (M3.8b) exist. What is testable today is that no source of
- * nondeterminism can enter `core` in the first place.
+ * Rule 2's other half - same seed produces a byte-identical final state - belongs to M3.8c,
+ * once `step` exists to produce one. What this file proves is the prior condition: no source of
+ * nondeterminism can enter `core` at all.
  */
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -127,6 +127,38 @@ const VIOLATIONS: readonly Violation[] = [
     expected: {
       category: "lint/style/noRestrictedImports",
       messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
+    id: "web_world_builder",
+    rule: "rule 4 (hidden information): web building a world rather than receiving a view",
+    dir: WEB_DIR,
+    source:
+      'import { makeWorldState } from "@manhunter/core";\n\nexport const build = (): unknown => makeWorldState;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
+    id: "sim_web_import",
+    rule: "rule 5 (dependency direction): sim importing its sibling app",
+    dir: SIM_DIR,
+    source: 'import { App } from "@manhunter/web";\n\nexport const render = (): unknown => App;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "sim depends on core only",
+    },
+  },
+  {
+    id: "web_sim_import",
+    rule: "rule 5 (dependency direction): web importing its sibling runner",
+    dir: WEB_DIR,
+    source:
+      'import { runBatch } from "@manhunter/sim";\n\nexport const run = (): unknown => runBatch;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "web depends on core only",
     },
   },
   {
