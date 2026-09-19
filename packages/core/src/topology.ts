@@ -16,7 +16,7 @@ import type { MapConfig } from "./config";
 import type { GraphLogic, Traversal } from "./graph";
 import { type EdgeId, makeEdgeId, makeNodeId, type NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import { type MapEdge, makeEdge, type Position, type River, type TravelMode } from "./map";
+import { type MapEdge, makeEdge, type Position, type River } from "./map";
 import type { Rng, RngState } from "./rng";
 
 /** Which cell of the generating grid a node came from. Zero-based, column-major in `x`. */
@@ -89,13 +89,6 @@ type TopologyDeps = {
   readonly graph: GraphLogic;
 };
 
-/**
- * Connectivity is checked on foot, for the same reason `minEscapeTurns` is measured on foot
- * (PLAN "Decisions"): the criminal walks. It is also the whole truth here, because every edge
- * kind this file emits is foot-traversable - revisit if rail ever appears in a topology.
- */
-const CONNECTIVITY_MODE: TravelMode = "foot";
-
 const MIN_GRID_SIDE = 1;
 
 /** A `[0, 1)` draw spans `[-magnitude, +magnitude)`. */
@@ -109,8 +102,24 @@ const gridNodeId = (column: number, row: number): NodeId => makeNodeId(`n-${colu
 const gridEdgeId = (column: number, row: number, axis: string): EdgeId =>
   makeEdgeId(`e-${column}-${row}-${axis}`);
 
-const HORIZONTAL = "h";
-const VERTICAL = "v";
+/**
+ * The two directions a grid edge can run, as data: the axis letter that goes into the edge id,
+ * and the cell offset from one end to the other. One loop reads the table rather than two
+ * near-identical loops reading each other's shape.
+ *
+ * Order is load-bearing. Edge order is the iteration order determinism depends on, so horizontal
+ * before vertical is a fixed part of what a seed produces, not a preference.
+ */
+type GridAxis = {
+  readonly letter: string;
+  readonly column: number;
+  readonly row: number;
+};
+
+const GRID_AXES: readonly GridAxis[] = [
+  { letter: "h", column: 1, row: 0 },
+  { letter: "v", column: 0, row: 1 },
+];
 
 const jitterOffset = (draw: number, magnitude: number): number =>
   (draw * JITTER_SPAN - 1) * magnitude;
@@ -120,12 +129,7 @@ type NodeBuild = {
   readonly state: RngState;
 };
 
-const buildNodes = (
-  rng: Rng,
-  balance: Balance,
-  grid: { readonly columns: number; readonly rows: number },
-  state: RngState,
-): NodeBuild => {
+const buildNodes = (rng: Rng, balance: Balance, grid: GridExtent, state: RngState): NodeBuild => {
   const { nodeSpacing, positionJitter } = balance.map;
   const magnitude = nodeSpacing * positionJitter;
   const nodes: TopologyNode[] = [];
@@ -148,38 +152,29 @@ const buildNodes = (
   return { nodes, state: current };
 };
 
-const horizontalEdges = (grid: {
-  readonly columns: number;
-  readonly rows: number;
-}): readonly MapEdge[] => {
+const axisEdges = (grid: GridExtent, axis: GridAxis): readonly MapEdge[] => {
   const edges: MapEdge[] = [];
-  for (let row = 0; row < grid.rows; row += 1) {
-    for (let column = 0; column + 1 < grid.columns; column += 1) {
-      const id = gridEdgeId(column, row, HORIZONTAL);
-      edges.push(makeEdge("road", id, gridNodeId(column, row), gridNodeId(column + 1, row)));
+  for (let row = 0; row + axis.row < grid.rows; row += 1) {
+    for (let column = 0; column + axis.column < grid.columns; column += 1) {
+      const id = gridEdgeId(column, row, axis.letter);
+      const to = gridNodeId(column + axis.column, row + axis.row);
+      edges.push(makeEdge("road", id, gridNodeId(column, row), to));
     }
   }
   return edges;
 };
 
-const verticalEdges = (grid: {
-  readonly columns: number;
-  readonly rows: number;
-}): readonly MapEdge[] => {
-  const edges: MapEdge[] = [];
-  for (let row = 0; row + 1 < grid.rows; row += 1) {
-    for (let column = 0; column < grid.columns; column += 1) {
-      const id = gridEdgeId(column, row, VERTICAL);
-      edges.push(makeEdge("road", id, gridNodeId(column, row), gridNodeId(column, row + 1)));
-    }
-  }
-  return edges;
-};
+/** A road between every pair of cells that touch. */
+const gridEdges = (grid: GridExtent): readonly MapEdge[] =>
+  GRID_AXES.flatMap((axis) => axisEdges(grid, axis));
 
 /**
- * Whether every node is still one walk away from every other. A search that hits
- * `LIMITS.maxSearchExpansions` answers "no", which keeps the edge: the conservative direction,
- * because a denser graph can only be more connected, never less.
+ * Whether every node is still one journey away from every other, in `balance.map.escapeMode`.
+ * That is the whole truth here only because every edge kind this file emits is foot-traversable;
+ * revisit if rail ever appears in a topology.
+ *
+ * A search that hits `LIMITS.maxSearchExpansions` answers "no", which keeps the edge: the
+ * conservative direction, because a denser graph can only be more connected, never less.
  */
 const isConnected = (
   deps: TopologyDeps,
@@ -191,7 +186,7 @@ const isConnected = (
   if (first === undefined) {
     return true;
   }
-  const traversal: Traversal = { graph: { nodes, edges }, balance, mode: CONNECTIVITY_MODE };
+  const traversal: Traversal = { graph: { nodes, edges }, balance, mode: balance.map.escapeMode };
   const result = deps.graph.reachable(traversal, first.id);
   if (result.kind === "expansion_limit_exceeded") {
     return false;
@@ -242,7 +237,7 @@ const layFootpaths = (
   state: RngState,
 ): EdgeBuild => {
   const count = Math.round(edges.length * balance.map.footpathRate);
-  if (count < MIN_GRID_SIDE) {
+  if (count === 0) {
     return { edges, state };
   }
   const shuffled = rng.shuffle(state, edges);
@@ -264,7 +259,7 @@ export const createTopologyLogic = (deps: TopologyDeps): TopologyLogic => ({
     }
 
     const built = buildNodes(deps.rng, balance, grid, state);
-    const full = [...horizontalEdges(grid), ...verticalEdges(grid)];
+    const full = gridEdges(grid);
     const pruned = pruneEdges(deps, balance, built.nodes, full, built.state);
     const withPaths = layFootpaths(deps.rng, balance, pruned.edges, pruned.state);
 

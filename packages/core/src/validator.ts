@@ -7,10 +7,10 @@
  * in several ways at once.
  *
  * Two readings that DESIGN.md left open are settled in PLAN "Decisions" and implemented here
- * literally. Distances are measured **on foot**, the criminal's only MVP travel mode. A chokepoint
- * that matters is a **`bridge` or `tunnel`** edge whose removal strictly increases the shortest
- * start-to-nearest-exit cost; without the edge-kind half the rule passes almost every map, because
- * almost every map has some edge on a unique shortest path.
+ * literally. Distances are measured in `balance.map.escapeMode`. A chokepoint that matters is a
+ * **`bridge` or `tunnel`** edge whose removal strictly increases the shortest start-to-nearest-exit
+ * cost; without the edge-kind half the rule passes almost every map, because almost every map has
+ * some edge on a unique shortest path.
  *
  * Rules defer to each other rather than restating each other's findings: `escape_distance`,
  * `exit_cut` and `chokepoint` all report nothing when no exit is reachable, because there is no
@@ -21,7 +21,7 @@ import type { Balance } from "./balance";
 import type { GraphLogic, Traversal } from "./graph";
 import type { EdgeId, NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import type { EdgeKind, MapEdge, MapGraph, TravelMode, TraversableGraph } from "./map";
+import type { EdgeKind, MapEdge, MapGraph, TraversableGraph } from "./map";
 import type { MinCutLogic } from "./mincut";
 import type { NonEmptyArray } from "./rng";
 
@@ -78,8 +78,6 @@ type RuleContext = {
 };
 
 type RuleCheck = (deps: ValidatorDeps, context: RuleContext) => readonly Violation[];
-
-const DISTANCE_MODE: TravelMode = "foot";
 
 /**
  * The edge kinds a chokepoint can be. Part of the rule rather than decoration: restricting it to
@@ -259,7 +257,7 @@ const RULES: Readonly<Record<ValidationRule, RuleCheck>> = {
 const traversalOf = (request: ValidationRequest): Traversal => ({
   graph: request.graph,
   balance: request.balance,
-  mode: DISTANCE_MODE,
+  mode: request.balance.map.escapeMode,
   ...(request.maxExpansions === undefined ? {} : { maxExpansions: request.maxExpansions }),
 });
 

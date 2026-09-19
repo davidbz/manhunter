@@ -9,9 +9,9 @@
  *
  * Two of M2.2's validity rules are satisfied here by construction rather than left to luck, which
  * is what M2.1a's note asked for: exits are drawn from border nodes at least `minEscapeTurns`
- * away from the start on foot, and neither the start nor anything adjacent to it can become an
- * exit. Uniform placement over the border would have failed the escape-distance rule on roughly a
- * third of maps and spent a regeneration attempt on each.
+ * away from the start, and neither the start nor anything adjacent to it can become an exit.
+ * Uniform placement over the border would have failed the escape-distance rule on roughly a third
+ * of maps and spent a regeneration attempt on each.
  */
 
 import type { Balance } from "./balance";
@@ -23,9 +23,9 @@ import {
   type Exit,
   type ExitKind,
   type MapGraph,
+  type MapNode,
   makeExit,
   makeNode,
-  type TravelMode,
 } from "./map";
 import type { NonEmptyArray, Rng, RngState } from "./rng";
 import { type GridCell, gridExtentOf, type MapTopology, type TopologyNode } from "./topology";
@@ -60,13 +60,6 @@ type DistrictDeps = {
   readonly rng: Rng;
   readonly graph: GraphLogic;
 };
-
-/**
- * Exit distance is measured on foot, for the same reason `minEscapeTurns` is (PLAN "Decisions"):
- * walking is the criminal's only MVP travel mode, so it is the honest floor on how long the run
- * out of the city takes.
- */
-const DISTANCE_MODE: TravelMode = "foot";
 
 /**
  * The regions a city is divided into, downtown first because it is pinned to the crime scene.
@@ -159,12 +152,13 @@ const chooseStart = (
 
 type ExitSite = {
   readonly node: TopologyNode;
-  readonly footCost: number;
+  readonly escapeCost: number;
 };
 
 /**
- * Every border node the criminal could plausibly be running to: reachable on foot, not the start,
- * and not next door to it. Costs come from one search per site rather than one sweep, because
+ * Every border node the criminal could plausibly be running to: reachable, not the start, and not
+ * next door to it. Costs are in `balance.map.escapeMode` and come from one search per site rather
+ * than one sweep, because
  * `GraphLogic` answers "how far to this node" and "which node is nearest", not "how far to all of
  * them"; a border is a few dozen nodes and each search is bounded, so the cost is trivial.
  */
@@ -179,7 +173,7 @@ const exitSites = (
   const traversal: Traversal = {
     graph: topology,
     balance,
-    mode: DISTANCE_MODE,
+    mode: balance.map.escapeMode,
   };
   const sites: ExitSite[] = [];
   for (const node of topology.nodes) {
@@ -190,7 +184,7 @@ const exitSites = (
     if (path.kind !== "path") {
       continue;
     }
-    sites.push({ node, footCost: path.cost });
+    sites.push({ node, escapeCost: path.cost });
   }
   return sites;
 };
@@ -201,7 +195,7 @@ type ExitChoice = {
 };
 
 /**
- * Exits are drawn from the sites at least `minEscapeTurns` away on foot, which is what makes
+ * Exits are drawn from the sites at least `minEscapeTurns` away, which is what makes
  * M2.2's escape-distance rule pass by construction: the rule is about the *nearest* exit, so every
  * exit has to clear the threshold, and 89% of border nodes do on a default grid.
  *
@@ -216,7 +210,7 @@ const chooseExits = (
   wanted: number,
   state: RngState,
 ): ExitChoice => {
-  const qualifying = sites.filter((site) => site.footCost >= balance.map.minEscapeTurns);
+  const qualifying = sites.filter((site) => site.escapeCost >= balance.map.minEscapeTurns);
   const shuffled = rng.shuffle(state, qualifying);
   if (shuffled.value.length >= wanted) {
     return {
@@ -227,7 +221,7 @@ const chooseExits = (
   const chosen = new Set(shuffled.value.map((site) => site.node.id));
   const topUp = sites
     .filter((site) => !chosen.has(site.node.id))
-    .toSorted((left, right) => right.footCost - left.footCost)
+    .toSorted((left, right) => right.escapeCost - left.escapeCost)
     .slice(0, wanted - shuffled.value.length);
   return {
     nodeIds: [...shuffled.value, ...topUp].map((site) => site.node.id),
@@ -302,25 +296,32 @@ const cellNeighbors = (index: CellIndex, cell: GridCell): readonly TopologyNode[
     return found === undefined ? [] : [found];
   });
 
+/** The unclaimed cells touching one node, claimed for `districtType` as they are taken. */
+const claimAround = (
+  index: CellIndex,
+  claimed: Map<NodeId, DistrictType>,
+  node: TopologyNode,
+  districtType: DistrictType,
+): readonly TopologyNode[] => {
+  const taken: TopologyNode[] = [];
+  for (const neighbor of cellNeighbors(index, node.cell)) {
+    if (claimed.has(neighbor.id)) {
+      continue;
+    }
+    claimed.set(neighbor.id, districtType);
+    taken.push(neighbor);
+  }
+  return taken;
+};
+
 /** One ring of growth for one region. Claims are first-come, so two regions never overlap. */
 const advanceRegion = (
   index: CellIndex,
   claimed: Map<NodeId, DistrictType>,
   frontier: readonly TopologyNode[],
   districtType: DistrictType,
-): readonly TopologyNode[] => {
-  const next: TopologyNode[] = [];
-  for (const node of frontier) {
-    for (const neighbor of cellNeighbors(index, node.cell)) {
-      if (claimed.has(neighbor.id)) {
-        continue;
-      }
-      claimed.set(neighbor.id, districtType);
-      next.push(neighbor);
-    }
-  }
-  return next;
-};
+): readonly TopologyNode[] =>
+  frontier.flatMap((node) => claimAround(index, claimed, node, districtType));
 
 /**
  * Regions grown outward from their seeds, one ring at a time and one region per turn, rather than
@@ -345,13 +346,13 @@ const growRegions = (
 ): ReadonlyMap<NodeId, DistrictType> => {
   const index = cellIndexOf(nodes);
   const claimed = new Map<NodeId, DistrictType>();
-  let frontiers = seeds.map((seed) => [seed.node]);
+  let frontiers: readonly (readonly TopologyNode[])[] = seeds.map((seed) => [seed.node]);
   for (const seed of seeds) {
     claimed.set(seed.node.id, seed.districtType);
   }
   for (let ring = 0; ring < nodes.length && frontiers.some((one) => one.length > 0); ring += 1) {
     frontiers = seeds.map((seed, position) =>
-      advanceRegion(index, claimed, frontiers[position] ?? [], seed.districtType).slice(),
+      advanceRegion(index, claimed, frontiers[position] ?? [], seed.districtType),
     );
   }
   return claimed;
@@ -375,6 +376,26 @@ const buildExits = (rng: Rng, nodeIds: readonly NodeId[], state: RngState): Exit
 
 const EXIT_DISTRICT: DistrictType = "exit";
 
+/**
+ * What a node that no region ever reached is labelled. `growRegions` only spreads along edges, so
+ * a node left isolated by M2.1a's pruning is never claimed; it still has to be some district.
+ */
+const UNREACHED_DISTRICT: DistrictType = REGION_TYPES[0];
+
+/** The grown labelling with the exits laid over it: an exit node is an `exit`, not a region. */
+const labelNodes = (
+  nodes: readonly TopologyNode[],
+  exitIds: ReadonlySet<NodeId>,
+  grown: ReadonlyMap<NodeId, DistrictType>,
+): readonly MapNode[] =>
+  nodes.map((node) =>
+    makeNode(
+      node.id,
+      exitIds.has(node.id) ? EXIT_DISTRICT : (grown.get(node.id) ?? UNREACHED_DISTRICT),
+      node.position,
+    ),
+  );
+
 export const createDistrictLogic = (deps: DistrictDeps): DistrictLogic => ({
   label: ({ topology, config, balance, state }) => {
     const wanted = Math.max(0, Math.floor(config.exitCount));
@@ -397,13 +418,7 @@ export const createDistrictLogic = (deps: DistrictDeps): DistrictLogic => ({
     return {
       kind: "map",
       graph: {
-        nodes: topology.nodes.map((node) =>
-          makeNode(
-            node.id,
-            exitIds.has(node.id) ? EXIT_DISTRICT : (grown.get(node.id) ?? REGION_TYPES[0]),
-            node.position,
-          ),
-        ),
+        nodes: labelNodes(topology.nodes, exitIds, grown),
         edges: topology.edges,
         exits: built.exits,
         river: topology.river,

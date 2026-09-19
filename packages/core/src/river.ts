@@ -15,7 +15,7 @@
 import type { Balance } from "./balance";
 import type { GraphLogic, Traversal } from "./graph";
 import type { EdgeId, NodeId } from "./ids";
-import { type MapEdge, makeEdge, type Position, type TravelMode } from "./map";
+import { type MapEdge, makeEdge, type Position } from "./map";
 import type { Rng, RngState } from "./rng";
 import { type GridExtent, gridExtentOf, type MapTopology, type TopologyNode } from "./topology";
 
@@ -50,9 +50,6 @@ type RiverDeps = {
 
 /** Which way the water runs. A vertical river separates east from west. */
 type Orientation = "vertical" | "horizontal";
-
-/** Same reasoning as `topology.ts`: the criminal walks, and every kind here is walkable. */
-const CONNECTIVITY_MODE: TravelMode = "foot";
 
 /**
  * How narrow a bank is allowed to get, in cells. One is legal geometry and a bad map: a
@@ -161,6 +158,15 @@ const plotCourse = (rng: Rng, state: RngState, grid: GridExtent): Course | null 
   return { orientation: chosen.value, cuts: carved.cuts, state: carved.state };
 };
 
+/** Which side of the river each node sits on. Two nodes with different sides need a bridge. */
+type Banks = ReadonlyMap<NodeId, boolean>;
+
+const bankOf = (nodes: readonly TopologyNode[], course: Course): Banks =>
+  new Map(nodes.map((node) => [node.id, isNearBank(node, course.orientation, course.cuts)]));
+
+const crossesRiver = (banks: Banks, edge: MapEdge): boolean =>
+  banks.get(edge.from) !== banks.get(edge.to);
+
 /**
  * One label per node, equal for any two nodes joined by the given edges. Built by repeated
  * reachability rather than a union-find: the graph is already the input to `GraphLogic`, and a
@@ -172,7 +178,7 @@ const componentLabels = (
   nodes: readonly TopologyNode[],
   edges: readonly MapEdge[],
 ): Map<NodeId, number> => {
-  const traversal: Traversal = { graph: { nodes, edges }, balance, mode: CONNECTIVITY_MODE };
+  const traversal: Traversal = { graph: { nodes, edges }, balance, mode: balance.map.escapeMode };
   const labels = new Map<NodeId, number>();
   let nextLabel = 0;
   for (const node of nodes) {
@@ -251,49 +257,44 @@ const selectBridges = (
 
 const spanRiver = (
   edges: readonly MapEdge[],
-  crosses: (edge: MapEdge) => boolean,
+  banks: Banks,
   chosen: ReadonlySet<EdgeId>,
 ): readonly MapEdge[] =>
   edges.flatMap((edge) => {
-    if (!crosses(edge)) {
+    if (!crossesRiver(banks, edge)) {
       return [edge];
     }
     return chosen.has(edge.id) ? [toBridge(edge)] : [];
   });
+
+const notBridgeable = (crossings: number, requiredBridges: number): RiverResult => ({
+  kind: "river_not_bridgeable",
+  crossings,
+  requiredBridges,
+});
 
 export const createRiverLogic = (deps: RiverDeps): RiverLogic => ({
   carve: ({ topology, balance, state }) => {
     const { minBridges, maxBridges, nodeSpacing } = balance.map;
     const course = plotCourse(deps.rng, state, gridExtentOf(topology.nodes));
     if (course === null) {
-      return { kind: "river_not_bridgeable", crossings: 0, requiredBridges: minBridges };
+      return notBridgeable(0, minBridges);
     }
 
-    const banks = new Map<NodeId, boolean>(
-      topology.nodes.map((node) => [node.id, isNearBank(node, course.orientation, course.cuts)]),
-    );
-    const crosses = (edge: MapEdge): boolean => banks.get(edge.from) !== banks.get(edge.to);
-    const crossings = topology.edges.filter(crosses);
+    const banks = bankOf(topology.nodes, course);
+    const crossings = topology.edges.filter((edge) => crossesRiver(banks, edge));
     if (crossings.length < minBridges) {
-      return {
-        kind: "river_not_bridgeable",
-        crossings: crossings.length,
-        requiredBridges: minBridges,
-      };
+      return notBridgeable(crossings.length, minBridges);
     }
 
     const shuffled = deps.rng.shuffle(course.state, crossings);
-    const banked = topology.edges.filter((edge) => !crosses(edge));
+    const banked = topology.edges.filter((edge) => !crossesRiver(banks, edge));
     const essential = essentialCrossings(
       componentLabels(deps, balance, topology.nodes, banked),
       shuffled.value,
     );
     if (essential.length > maxBridges) {
-      return {
-        kind: "river_not_bridgeable",
-        crossings: crossings.length,
-        requiredBridges: essential.length,
-      };
+      return notBridgeable(crossings.length, essential.length);
     }
 
     const selected = selectBridges(deps.rng, balance, shuffled.value, essential, shuffled.state);
@@ -301,7 +302,7 @@ export const createRiverLogic = (deps: RiverDeps): RiverLogic => ({
       kind: "river",
       topology: {
         nodes: topology.nodes,
-        edges: spanRiver(topology.edges, crosses, selected.chosen),
+        edges: spanRiver(topology.edges, banks, selected.chosen),
         river: { points: riverPoints(course.orientation, course.cuts, nodeSpacing) },
       },
       state: selected.state,

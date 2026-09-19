@@ -19,11 +19,11 @@ import type { AttemptFailure, GenerationLogic } from "./generate";
 import { type HunterState, makeHunterState } from "./hunter";
 import type { NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import type { TravelMode } from "./map";
+import type { MapGraph, TravelMode } from "./map";
 import type { Rng, RngState } from "./rng";
 import { type SealedWorld, seal } from "./sealed";
 import { HOURS_PER_DAY, type Hour, makeClock, type Turn } from "./time";
-import { makeWorldState } from "./world";
+import { makeWorldState, type WorldState } from "./world";
 
 export type GameRequest = {
   readonly setup: GameSetup;
@@ -71,7 +71,12 @@ const STREAM = {
   play: "play",
 } as const;
 
-/** The criminal's only MVP mode, and what `minEscapeTurns` is measured in (PLAN "Decisions"). */
+/**
+ * The criminal's only MVP travel mode. It has to match `balance.map.escapeMode`, which is what
+ * generation measured the escape distance in; a criminal that starts faster than the map was
+ * checked against makes `minEscapeTurns` a guarantee about nobody. It is still a separate
+ * decision, because M3.5 is free to put the criminal in a car without remeasuring the map.
+ */
 const START_MODE: TravelMode = "foot";
 
 const FIRST_TURN: Turn = 0;
@@ -112,6 +117,23 @@ const startingCriminal = (
     desperation: balance.criminal.startingDesperation,
   });
 
+/** A world at turn zero. The play stream is forked from the root, not taken from generation. */
+const startingWorld = (
+  rng: Rng,
+  balance: Balance,
+  config: GameConfig,
+  graph: MapGraph,
+  root: RngState,
+): WorldState =>
+  makeWorldState({
+    config,
+    rng: rng.fork(root, STREAM.play),
+    clock: makeClock(config.startHour, FIRST_TURN),
+    map: graph,
+    hunter: startingHunter(balance),
+    criminal: startingCriminal(balance, config.criminalProfile, graph.incidentNodeId),
+  });
+
 export const createGameLogic = ({ rng, generation }: GameDeps): GameLogic => ({
   create: ({ setup, seed, balance }) => {
     if (setup.maxTurns > LIMITS.maxGameTurns) {
@@ -146,20 +168,7 @@ export const createGameLogic = ({ rng, generation }: GameDeps): GameLogic => ({
 
     return {
       kind: "game",
-      world: seal(
-        makeWorldState({
-          config,
-          rng: rng.fork(root, STREAM.play),
-          clock: makeClock(config.startHour, FIRST_TURN),
-          map: generated.graph,
-          hunter: startingHunter(balance),
-          criminal: startingCriminal(
-            balance,
-            config.criminalProfile,
-            generated.graph.incidentNodeId,
-          ),
-        }),
-      ),
+      world: seal(startingWorld(rng, balance, config, generated.graph, root)),
     };
   },
 });

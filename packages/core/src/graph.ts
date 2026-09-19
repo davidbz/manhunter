@@ -181,8 +181,15 @@ const search = (
   const nodeIds = nodeIdSet(traversal.graph);
   const order: NodeId[] = [];
   const previous = new Map<NodeId, Step>();
+  const nothingReached = (): SearchOutcome => ({
+    kind: "settled",
+    reached: null,
+    cost: ZERO_COST,
+    previous,
+    order,
+  });
   if (!nodeIds.has(from)) {
-    return { kind: "settled", reached: null, cost: ZERO_COST, previous, order };
+    return nothingReached();
   }
 
   const relaxation: Relaxation = {
@@ -214,7 +221,7 @@ const search = (
     }
     relax(relaxation, visit);
   }
-  return { kind: "settled", reached: null, cost: ZERO_COST, previous, order };
+  return nothingReached();
 };
 
 /**
