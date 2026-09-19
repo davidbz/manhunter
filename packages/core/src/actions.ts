@@ -19,9 +19,9 @@
  */
 
 import type { Balance, DistrictProperties } from "./balance";
+import { districtPropertiesAt, witnessDensityAt } from "./exposure";
 import { blockedEdgeIdsAt, type HunterAction, type HunterActionKind } from "./hunter";
 import type { EdgeId, NodeId } from "./ids";
-import type { MapGraph } from "./map";
 import {
   makeReport,
   nextReportId,
@@ -31,7 +31,7 @@ import {
   sightingAccuracy,
 } from "./report";
 import type { Rng, RngDraw, RngState } from "./rng";
-import { type Hour, type Turn, timeOfDayAt } from "./time";
+import type { Turn } from "./time";
 import type { WorldState } from "./world";
 
 /** What the player has to pick before the action is well formed. Read by the UI (PLAN M5.5). */
@@ -193,24 +193,6 @@ const validateNodeTarget: ActionCheck<NodeAction> = ({ world, action }) =>
     ? null
     : { kind: "unknown_node", nodeId: action.nodeId };
 
-/** A district with no cameras and no witnesses, which is what a node off the map amounts to. */
-const NO_DISTRICT: DistrictProperties = {
-  witnessDensity: 0,
-  nightWitnessMultiplier: 0,
-  hidingSpots: 0,
-  cctvCoverage: 0,
-};
-
-/**
- * The properties of the district a node sits in. The fallback is only reached by a node the map
- * does not have, which `validateNodeTarget` has already refused; it is here so the lookup is
- * total rather than assumed, and it answers "nobody saw anything", which is the honest reading.
- */
-const propertiesAt = (balance: Balance, map: MapGraph, nodeId: NodeId): DistrictProperties => {
-  const node = map.nodes.find((candidate) => candidate.id === nodeId);
-  return node === undefined ? NO_DISTRICT : balance.districts[node.districtType];
-};
-
 const FULL_TRUST = 1;
 const NO_TRUST = 0;
 
@@ -226,12 +208,6 @@ const trustFactorOf = (balance: Balance, trust: number): number =>
     NO_TRUST,
     FULL_TRUST,
   );
-
-/** DESIGN.md's district table: a park is watched by nobody after dark, a transit hub always is. */
-const witnessDensityAt = (balance: Balance, properties: DistrictProperties, hour: Hour): number =>
-  timeOfDayAt(balance.time, hour) === "night"
-    ? properties.witnessDensity * properties.nightWitnessMultiplier
-    : properties.witnessDensity;
 
 /**
  * What is at the node. This is the one place a hunter-facing producer reads the criminal's true
@@ -276,7 +252,7 @@ const gather = (rng: Rng, intel: IntelSource, context: ActionContext<NodeAction>
   const lookout: Lookout = {
     world,
     balance,
-    properties: propertiesAt(balance, world.map, action.nodeId),
+    properties: districtPropertiesAt(balance.districts, world.map, action.nodeId),
   };
   const rolled = rng.float(world.rng);
   if (rolled.value >= intel.chance(lookout)) {
@@ -316,7 +292,7 @@ const CANVASS_DELAY: Turn = 0;
 const CANVASS: IntelSource = {
   source: "witness",
   chance: ({ world, balance, properties }) =>
-    witnessDensityAt(balance, properties, world.clock.hour) *
+    witnessDensityAt(balance.time, properties, world.clock.hour) *
     trustFactorOf(balance, world.hunter.trust) *
     reportVolumeFactor(balance.actions.trueBriefing, world.hunter.briefingTurns.length),
   accuracy: ({ world, balance }) =>
