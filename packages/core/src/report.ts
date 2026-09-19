@@ -5,7 +5,7 @@
  * Content is structured, never prose. Wording is the UI's job; `core` has no user-facing strings.
  */
 
-import type { NodeId, ReportId } from "./ids";
+import { makeReportId, type NodeId, type ReportId } from "./ids";
 import type { TravelMode } from "./map";
 import type { Turn } from "./time";
 
@@ -75,3 +75,38 @@ export const makeReport = (input: ReportInput): Report => ({
   truth: input.truth,
   accuracy: Math.min(Math.max(input.accuracy, ACCURACY_MINIMUM), ACCURACY_MAXIMUM),
 });
+
+/** The part of `balance.reports` a witness sighting's reliability is built from. */
+export type AccuracySettings = {
+  readonly baseSightingAccuracy: number;
+  readonly trustAccuracyWeight: number;
+  readonly minAccuracy: number;
+  readonly maxAccuracy: number;
+};
+
+/**
+ * How far a witness sighting can be trusted. DESIGN.md "Hunter resources": low trust means fewer
+ * *and worse* witness reports - this is the worse half, and `actions.ts` is what makes them fewer.
+ *
+ * `trustFactor` is the hunter's trust as a fraction of its range rather than the meter itself,
+ * because the bounds belong to `balance.hunter` and this module reads `balance.reports`.
+ * PLAN M3.6 reuses this for the sightings the world produces without being asked.
+ */
+export const sightingAccuracy = (settings: AccuracySettings, trustFactor: number): number =>
+  Math.min(
+    Math.max(
+      settings.baseSightingAccuracy + settings.trustAccuracyWeight * trustFactor,
+      settings.minAccuracy,
+    ),
+    settings.maxAccuracy,
+  );
+
+const REPORT_ID_PREFIX = "report-";
+
+/**
+ * The id the next report in a world takes. Reports are only ever appended - `view.ts` filters the
+ * list, it never removes from it - so their count is already a deterministic counter and
+ * `WorldState` needs no field for one.
+ */
+export const nextReportId = (reports: readonly Report[]): ReportId =>
+  makeReportId(`${REPORT_ID_PREFIX}${reports.length}`);

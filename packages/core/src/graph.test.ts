@@ -219,6 +219,63 @@ describe("reachable", () => {
 });
 
 /** A chain of `length` nodes joined by roads, for walking into the expansion cap. */
+describe("blockedEdgeIds", () => {
+  const blocked = (graph: MapGraph, mode: TravelMode, edgeIds: readonly string[]): Traversal => ({
+    ...traversalOn(graph, mode),
+    blockedEdgeIds: new Set(edgeIds.map(makeEdgeId)),
+  });
+
+  it("removes a blocked edge from both of its ends at once", () => {
+    const traversal = blocked(line, "car", ["a-b"]);
+
+    expect(graphLogic.neighbors(traversal, makeNodeId("a"))).toEqual([]);
+    expect(graphLogic.neighbors(traversal, makeNodeId("b")).map((one) => one.nodeId)).toEqual(
+      ids(["c"]),
+    );
+  });
+
+  it("makes what the block cut off unreachable rather than merely expensive", () => {
+    const traversal = blocked(line, "car", ["b-c"]);
+
+    expect(graphLogic.shortestPath(traversal, makeNodeId("a"), makeNodeId("c")).kind).toBe(
+      "unreachable",
+    );
+    expect(graphLogic.reachable(traversal, makeNodeId("a"))).toEqual({
+      kind: "reachable",
+      nodeIds: ids(["a", "b"]),
+    });
+  });
+
+  /**
+   * PLAN M3.3: a checkpoint stops whoever walks into it, so a block is not mode-specific. What
+   * keeps the city open is `balance.edges` leaving footpaths unblockable, not a mode exemption.
+   */
+  it("blocks the edge on foot as well as by car", () => {
+    expect(graphLogic.neighbors(blocked(line, "foot", ["a-b"]), makeNodeId("a"))).toEqual([]);
+  });
+
+  it("reroutes rather than refuses when another kind of edge survives", () => {
+    const traversal = blocked(shortcut, "foot", ["a-b"]);
+
+    expect(
+      expectPath(graphLogic.shortestPath(traversal, makeNodeId("a"), makeNodeId("c"))).edgeIds,
+    ).toEqual([makeEdgeId("a-c")]);
+  });
+
+  it("ignores an id no edge carries", () => {
+    const traversal = blocked(line, "car", ["nowhere"]);
+
+    expect(graphLogic.neighbors(traversal, makeNodeId("a")).map((one) => one.nodeId)).toEqual(
+      ids(["b"]),
+    );
+  });
+
+  it("treats an absent set as nothing blocked", () => {
+    expect(traversalOn(line, "car").blockedEdgeIds).toBeUndefined();
+    expect(graphLogic.neighbors(traversalOn(line, "car"), makeNodeId("a"))).toHaveLength(1);
+  });
+});
+
 const chainOf = (length: number): MapGraph => {
   const names = Array.from({ length }, (_, index) => `n${index}`);
   const edges = names.slice(1).map((name, index) => edge("road", names[index] ?? "", name));

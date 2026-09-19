@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameEvent, GameEventKind } from "./events";
+import { HIDDEN_EVENT_KINDS } from "./events";
 import { makeNodeId, makeReportId } from "./ids";
 
 const TURN = 5;
@@ -46,5 +47,21 @@ describe("GameEvent", () => {
 
   it("round-trips through JSON (architecture rule 3)", () => {
     expect(JSON.parse(JSON.stringify(samples))).toEqual(samples);
+  });
+});
+
+describe("HIDDEN_EVENT_KINDS", () => {
+  // The two variants that name a report, pinned by hand. `view.ts` derives both the redaction and
+  // the `HunterEvent` type from this list, so nothing else in the repo would notice it shrinking.
+  it("names every variant whose kind would say what a report is", () => {
+    expect([...HIDDEN_EVENT_KINDS]).toEqual(["eyewitness", "prank_call"]);
+  });
+
+  it("names only variants that carry a report id, which is all the hunter may keep", () => {
+    for (const hidden of samples.filter((event) =>
+      HIDDEN_EVENT_KINDS.some((k) => k === event.kind),
+    )) {
+      expect(hidden).toHaveProperty("reportId");
+    }
   });
 });

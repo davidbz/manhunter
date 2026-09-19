@@ -34,6 +34,13 @@ export type Traversal = {
   readonly graph: TraversableGraph;
   readonly balance: Balance;
   readonly mode: TravelMode;
+  /**
+   * Edges standing containment has closed, from `blockedEdgeIdsAt` (PLAN M3.3). Absent means
+   * nothing is blocked. A block removes the edge in **every** travel mode rather than only the
+   * vehicle ones: a checkpoint stops whoever walks into it, and what keeps a single well-placed
+   * roadblock from sealing the city is that `balance.edges` leaves footpaths unblockable.
+   */
+  readonly blockedEdgeIds?: ReadonlySet<EdgeId>;
   /** Defaults to `LIMITS.maxSearchExpansions`. Overridable so a test can reach the cap. */
   readonly maxExpansions?: number;
 };
@@ -121,11 +128,12 @@ const link = (adjacency: Map<NodeId, Neighbor[]>, from: NodeId, neighbor: Neighb
 };
 
 const buildAdjacency = (traversal: Traversal, nodeIds: ReadonlySet<NodeId>): Adjacency => {
-  const { graph, balance, mode } = traversal;
+  const { graph, balance, mode, blockedEdgeIds } = traversal;
   const adjacency = new Map<NodeId, Neighbor[]>();
   for (const edge of graph.edges) {
     const cost = edgeCost(balance, edge, mode);
-    if (cost === null || !nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+    const blocked = blockedEdgeIds?.has(edge.id) ?? false;
+    if (cost === null || blocked || !nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
       continue;
     }
     link(adjacency, edge.from, { nodeId: edge.to, edgeId: edge.id, cost });
