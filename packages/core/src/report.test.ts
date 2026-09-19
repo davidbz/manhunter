@@ -2,7 +2,13 @@ import { fc, test } from "@fast-check/vitest";
 import { describe, expect, it } from "vitest";
 import { makeNodeId, makeReportId } from "./ids";
 import type { Report, ReportInput } from "./report";
-import { HIDDEN_REPORT_FIELDS, makeReport, UNKNOWN_TRAVEL_MODE } from "./report";
+import {
+  HIDDEN_REPORT_FIELDS,
+  makeReport,
+  nextReportId,
+  sightingAccuracy,
+  UNKNOWN_TRAVEL_MODE,
+} from "./report";
 
 const OBSERVED_AT = 4;
 const CCTV_DELAY = 2;
@@ -65,5 +71,44 @@ describe("HIDDEN_REPORT_FIELDS", () => {
       "receivedAtTurn",
       "source",
     ]);
+  });
+});
+
+describe("sightingAccuracy", () => {
+  const settings = {
+    baseSightingAccuracy: 0.4,
+    trustAccuracyWeight: 0.4,
+    minAccuracy: 0.1,
+    maxAccuracy: 0.95,
+  };
+
+  it("is the base reliability at no standing, and the base plus the weight at full", () => {
+    expect(sightingAccuracy(settings, 0)).toBeCloseTo(settings.baseSightingAccuracy);
+    expect(sightingAccuracy(settings, 1)).toBeCloseTo(
+      settings.baseSightingAccuracy + settings.trustAccuracyWeight,
+    );
+  });
+
+  it("rises with the hunter's standing", () => {
+    expect(sightingAccuracy(settings, 0.25)).toBeLessThan(sightingAccuracy(settings, 0.75));
+  });
+
+  it("stays inside the range whatever the settings say", () => {
+    const generous = { ...settings, baseSightingAccuracy: 2 };
+    const stingy = { ...settings, baseSightingAccuracy: -2, trustAccuracyWeight: 0 };
+
+    expect(sightingAccuracy(generous, 1)).toBe(settings.maxAccuracy);
+    expect(sightingAccuracy(stingy, 1)).toBe(settings.minAccuracy);
+  });
+});
+
+describe("nextReportId", () => {
+  it("counts from zero and never repeats itself as reports are appended", () => {
+    const first = nextReportId([]);
+    const one = makeReport({ ...sightingInput, id: first });
+
+    expect(first).toBe("report-0");
+    expect(nextReportId([one])).toBe("report-1");
+    expect(nextReportId([one, one])).toBe("report-2");
   });
 });

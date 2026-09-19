@@ -37,8 +37,27 @@ export type HunterAction =
   | { readonly kind: "pull_cctv"; readonly nodeId: NodeId }
   | { readonly kind: "true_briefing" };
 
+export type HunterActionKind = HunterAction["kind"];
+
 /** A hunter at the start of a hunt: resources as given, nothing deployed. */
 export const makeHunterState = (input: Omit<HunterState, "containments">): HunterState => ({
   ...input,
   containments: [],
 });
+
+/**
+ * The edges standing containment has closed at `turn`. A containment blocks from the turn it was
+ * placed until `expiresAt` exclusive, so `balance.actions.roadblock.durationTurns` turns of
+ * blocking covers exactly that many turns.
+ *
+ * A `ReadonlySet` because it feeds `Traversal.blockedEdgeIds`, which every search consults once
+ * per edge (PLAN M3.3). It is derived on demand, never stored: `WorldState` keeps the
+ * containments, which are plain data and round-trip through JSON (architecture rule 3).
+ */
+export const blockedEdgeIdsAt = (
+  containments: readonly Containment[],
+  turn: Turn,
+): ReadonlySet<EdgeId> =>
+  new Set(
+    containments.filter((containment) => turn < containment.expiresAt).map(({ edgeId }) => edgeId),
+  );

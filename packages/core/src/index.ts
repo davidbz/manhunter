@@ -1,4 +1,14 @@
 export type {
+  ActionCost,
+  ActionLogic,
+  ActionRejection,
+  ActionRequest,
+  ActionResult,
+  ActionTargetKind,
+  ActionValidation,
+} from "./actions";
+export { createActionLogic, targetKindOf } from "./actions";
+export type {
   Balance,
   CriminalProfileWeights,
   DistrictProperties,
@@ -15,7 +25,8 @@ export type {
 export { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
 export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
 export { createDistrictLogic } from "./districts";
-export type { GameEvent, GameEventKind } from "./events";
+export type { GameEvent, GameEventKind, HiddenEvent, HiddenEventKind } from "./events";
+export { HIDDEN_EVENT_KINDS } from "./events";
 export type { GameLogic, GameRequest, GameResult } from "./game";
 export { createGameLogic } from "./game";
 export type {
@@ -36,8 +47,14 @@ export type {
   Traversal,
 } from "./graph";
 export { createGraphLogic } from "./graph";
-export type { Containment, HunterAction, HunterState, Roadblock } from "./hunter";
-export { makeHunterState } from "./hunter";
+export type {
+  Containment,
+  HunterAction,
+  HunterActionKind,
+  HunterState,
+  Roadblock,
+} from "./hunter";
+export { blockedEdgeIdsAt, makeHunterState } from "./hunter";
 export type { EdgeId, NodeId, ReportId } from "./ids";
 export { makeEdgeId, makeNodeId, makeReportId } from "./ids";
 export type {
@@ -66,6 +83,7 @@ export { GAME_TITLE } from "./meta";
 export type { MinCutLogic, MinCutResult } from "./mincut";
 export { createMinCutLogic } from "./mincut";
 export type {
+  AccuracySettings,
   HiddenReportField,
   Report,
   ReportContent,
@@ -73,15 +91,21 @@ export type {
   ReportSource,
   ReportTruth,
 } from "./report";
-export { HIDDEN_REPORT_FIELDS, makeReport, UNKNOWN_TRAVEL_MODE } from "./report";
+export {
+  HIDDEN_REPORT_FIELDS,
+  makeReport,
+  nextReportId,
+  sightingAccuracy,
+  UNKNOWN_TRAVEL_MODE,
+} from "./report";
 export type { RiverLogic, RiverRequest, RiverResult } from "./river";
 export { createRiverLogic } from "./river";
 export type { NonEmptyArray, Rng, RngDraw, RngState, Weighted } from "./rng";
 export { createRng } from "./rng";
 export type { SealedWorld } from "./sealed";
 export { unseal } from "./sealed";
-export type { Clock, Hour, TimeOfDay, Turn } from "./time";
-export { HOURS_PER_DAY, makeClock } from "./time";
+export type { Clock, DaylightHours, Hour, TimeOfDay, Turn } from "./time";
+export { HOURS_PER_DAY, makeClock, timeOfDayAt } from "./time";
 export type {
   GridCell,
   MapTopology,
@@ -99,6 +123,13 @@ export type {
   Violation,
 } from "./validator";
 export { createValidatorLogic } from "./validator";
-export type { HunterReport, HunterView, RevealFrame } from "./view";
+export type {
+  HunterEvent,
+  HunterReport,
+  HunterView,
+  ReportArrivedEvent,
+  RevealFrame,
+} from "./view";
+export { toHunterView } from "./view";
 export type { GameOutcome, WorldState } from "./world";
 export { IN_PROGRESS, makeWorldState } from "./world";

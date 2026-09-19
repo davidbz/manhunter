@@ -32,3 +32,21 @@ export const makeClock = (startHour: Hour, turn: Turn): Clock => ({
   turn,
   hour: (((startHour + turn) % HOURS_PER_DAY) + HOURS_PER_DAY) % HOURS_PER_DAY,
 });
+
+/**
+ * The part of `balance.time` that decides whether the lights are on. Structural rather than
+ * `Balance` itself, for the reason `TraversableGraph` is structural: it keeps the dependency
+ * pointing one way, since `balance.ts` already reads this module's siblings.
+ */
+export type DaylightHours = {
+  readonly nightStartHour: Hour;
+  readonly dayStartHour: Hour;
+};
+
+/**
+ * Night is `[nightStartHour, dayStartHour)`, wrapping past midnight. Districts behave differently
+ * after dark (DESIGN.md "District properties"), which is what PLAN M3.4a's canvass reads and what
+ * M3.7's nightfall event fires on.
+ */
+export const timeOfDayAt = (hours: DaylightHours, hour: Hour): TimeOfDay =>
+  hour >= hours.nightStartHour || hour < hours.dayStartHour ? "night" : "day";

@@ -19,3 +19,15 @@ export type GameEvent =
   | { readonly kind: "rush_hour"; readonly turn: Turn };
 
 export type GameEventKind = GameEvent["kind"];
+
+/**
+ * Variants the hunter must never see in their own shape. Both name a report, and their kind says
+ * what that report is - which is the one thing `HIDDEN_REPORT_FIELDS` exists to hide, so an
+ * unredacted feed would undo it. Declared as data, the way the hidden report fields are, so the
+ * projection in `view.ts` and the `HunterEvent` type it produces cannot drift apart.
+ */
+export const HIDDEN_EVENT_KINDS = ["eyewitness", "prank_call"] as const;
+
+export type HiddenEventKind = (typeof HIDDEN_EVENT_KINDS)[number];
+
+export type HiddenEvent = Extract<GameEvent, { readonly kind: HiddenEventKind }>;
