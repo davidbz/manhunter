@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HunterAction, HunterState } from "./hunter";
-import { blockedEdgeIdsAt, makeHunterState } from "./hunter";
+import { blockedEdgeIdsAt, makeHunterState, trustFactorOf } from "./hunter";
 import { makeEdgeId, makeNodeId } from "./ids";
 
 const START_ACTION_POINTS = 3;
@@ -94,5 +94,20 @@ describe("blockedEdgeIdsAt", () => {
     ];
 
     expect([...blockedEdgeIdsAt(mixed, PLACED_AT)]).toEqual([road]);
+  });
+});
+
+describe("trustFactorOf", () => {
+  const bounds = { trustMin: 0, trustMax: 100 };
+
+  it("reads the meter as a fraction of its range", () => {
+    expect(trustFactorOf(bounds, bounds.trustMin)).toBe(0);
+    expect(trustFactorOf(bounds, bounds.trustMax)).toBe(1);
+    expect(trustFactorOf(bounds, bounds.trustMax / 2)).toBeCloseTo(0.5);
+  });
+
+  it("never reads outside the range, whatever it is handed", () => {
+    expect(trustFactorOf(bounds, bounds.trustMax * 2)).toBe(1);
+    expect(trustFactorOf(bounds, -bounds.trustMax)).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CriminalState } from "./criminal";
-import { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
+import { EMPTY_CRIMINAL_KNOWLEDGE, heatFactorOf, makeCriminalState } from "./criminal";
 import { makeNodeId } from "./ids";
 
 const START_STAMINA = 100;
@@ -32,5 +32,20 @@ describe("makeCriminalState", () => {
   it("round-trips through JSON (architecture rule 3)", () => {
     const criminal = makeCriminalState(input);
     expect(JSON.parse(JSON.stringify(criminal))).toEqual(criminal);
+  });
+});
+
+describe("heatFactorOf", () => {
+  const bounds = { heatMax: 100 };
+
+  it("reads how recognisable the criminal is as a fraction of the meter", () => {
+    expect(heatFactorOf(bounds, 0)).toBe(0);
+    expect(heatFactorOf(bounds, bounds.heatMax)).toBe(1);
+    expect(heatFactorOf(bounds, bounds.heatMax / 4)).toBeCloseTo(0.25);
+  });
+
+  it("never reads outside the meter, whatever it is handed", () => {
+    expect(heatFactorOf(bounds, bounds.heatMax * 3)).toBe(1);
+    expect(heatFactorOf(bounds, -bounds.heatMax)).toBe(0);
   });
 });

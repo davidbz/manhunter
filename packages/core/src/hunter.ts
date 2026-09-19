@@ -74,3 +74,28 @@ export const blockedEdgeIdsAt = (
   new Set(
     containments.filter((containment) => turn < containment.expiresAt).map(({ edgeId }) => edgeId),
   );
+
+/** The part of `balance.hunter` the trust meter's range is read from. */
+export type TrustBounds = {
+  readonly trustMin: number;
+  readonly trustMax: number;
+};
+
+const NO_TRUST = 0;
+const FULL_TRUST = 1;
+
+/**
+ * The hunter's standing as a fraction of its range. Both producers of witness reports read it -
+ * `actions.ts` for a canvass the hunter paid for, `intel.ts` for the calls the city makes unasked
+ * - and one copy keeps them from disagreeing about what a trust of 40 is worth.
+ *
+ * No guard against an empty range: `Balance` is `typeof BALANCE` over an `as const` table, so its
+ * trust bounds are literal types and a range with no span is not a value a caller can pass on.
+ * Widening them for a sweep (PLAN M4.3) is what would make the division fallible, and that task is
+ * where the guard would then belong.
+ */
+export const trustFactorOf = (bounds: TrustBounds, trust: number): number =>
+  Math.min(
+    Math.max((trust - bounds.trustMin) / (bounds.trustMax - bounds.trustMin), NO_TRUST),
+    FULL_TRUST,
+  );

@@ -120,6 +120,29 @@ const UNBRIEFED_VOLUME = 1;
 export const reportVolumeFactor = (settings: VolumeSettings, briefings: number): number =>
   briefings === NO_BRIEFINGS ? UNBRIEFED_VOLUME : settings.reportVolumeMultiplier;
 
+/** The part of `balance.reports` a prank call's rate is built from. */
+export type PrankSettings = {
+  readonly basePrankRate: number;
+  readonly prankRatePerBriefing: number;
+  readonly maxPrankRate: number;
+};
+
+/**
+ * How often somebody rings in something they invented. DESIGN.md "Reports": the prank rate scales
+ * with reward and media attention, and in the MVP the only attention on sale is a briefing.
+ *
+ * Additive per briefing, unlike `reportVolumeFactor`, and deliberately so: the two are the halves
+ * of the same bargain and they are meant to diverge. Going to the press again buys no new public,
+ * but it does reach a new crank, so the cost of repeating the free action compounds while its
+ * benefit does not. `maxPrankRate` is what stops that running to a phone line of nothing but
+ * noise, and it is why this one is safe to let grow.
+ */
+export const prankRate = (settings: PrankSettings, briefings: number): number =>
+  Math.min(
+    settings.basePrankRate + settings.prankRatePerBriefing * briefings,
+    settings.maxPrankRate,
+  );
+
 const REPORT_ID_PREFIX = "report-";
 
 /**

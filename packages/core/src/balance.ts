@@ -13,6 +13,7 @@
 import type { Difficulty, MapConfig } from "./config";
 import type { CriminalProfile } from "./criminal";
 import type { DistrictType, EdgeKind, EdgeProperties, TravelMode } from "./map";
+import type { ReportSource } from "./report";
 import type { NonEmptyArray, Weighted } from "./rng";
 import type { GameOutcome } from "./world";
 
@@ -200,6 +201,32 @@ const MAP: MapGenerationSettings = {
 };
 
 /**
+ * What the hunter's heatmap moves on (DESIGN.md "Probability heatmap", PLAN M3.6b). Annotated
+ * rather than inferred, for the same reason `MAP` is: a test and a balance sweep both need to
+ * vary one knob without the literal types of the rest rejecting it.
+ */
+export type BeliefSettings = {
+  /**
+   * The share of a node's suspicion that moves to its neighbours each turn. It is how fast the
+   * hunter's information goes stale: at nothing the heatmap never forgets, and at one it holds
+   * only where the criminal cannot still be.
+   */
+  readonly spreadFraction: number;
+  /**
+   * How far a report from each source pulls the distribution, in [0, 1). The hunter cannot see a
+   * report's hidden accuracy, so this is reliability as the hunter can judge it - by who is
+   * talking. Below one throughout, so no single report ever collapses the map to a point or
+   * empties a district outright.
+   */
+  readonly sourceWeight: Readonly<Record<ReportSource, number>>;
+};
+
+const BELIEF: BeliefSettings = {
+  spreadFraction: 0.5,
+  sourceWeight: { cctv: 0.9, patrol: 0.6, witness: 0.5, tip: 0.2 },
+};
+
+/**
  * What each ending is worth before the components are applied. Only a capture scores a base:
  * DESIGN.md scores the win, and a loss is left to be told apart by its components.
  */
@@ -263,6 +290,7 @@ export const BALANCE = {
 
   districts: DISTRICTS,
   edges: EDGES,
+  belief: BELIEF,
 
   reports: {
     /** Accuracy of a witness sighting before trust and district density move it. */
@@ -276,7 +304,14 @@ export const BALANCE = {
     basePrankRate: 0.05,
     prankRatePerBriefing: 0.04,
     maxPrankRate: 0.4,
+    /** Share of the calls the city makes unasked that are about somebody else entirely. */
     falseReportRate: 0.1,
+    /**
+     * How long a call nobody asked for takes to reach the desk. A canvass is immediate because
+     * the hunter is standing there; a member of the public has to decide to ring, and then
+     * somebody has to take the message - which is DESIGN.md's first pillar in one number.
+     */
+    unpromptedDelayTurns: 1,
   },
 
   criminal: {

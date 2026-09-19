@@ -179,6 +179,7 @@ describe("WorldState serialization", () => {
       world.criminal,
       ...world.reports,
       ...world.events,
+      ...world.belief,
       world.outcome,
     ];
     for (const value of values) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameEvent, GameEventKind } from "./events";
-import { HIDDEN_EVENT_KINDS } from "./events";
+import { EVENT_VISIBILITY, isHiddenEventKind } from "./events";
 import { makeNodeId, makeReportId } from "./ids";
 
 const TURN = 5;
@@ -50,17 +50,25 @@ describe("GameEvent", () => {
   });
 });
 
-describe("HIDDEN_EVENT_KINDS", () => {
-  // The two variants that name a report, pinned by hand. `view.ts` derives both the redaction and
-  // the `HunterEvent` type from this list, so nothing else in the repo would notice it shrinking.
-  it("names every variant whose kind would say what a report is", () => {
-    expect([...HIDDEN_EVENT_KINDS]).toEqual(["eyewitness", "prank_call"]);
+describe("EVENT_VISIBILITY", () => {
+  // Every row pinned by hand. `view.ts` derives both the redaction and the `HunterEvent` type
+  // from this table, so nothing else in the repo would notice a row changing sides.
+  it("declares a side for every variant, and hides the two that name a report", () => {
+    expect(EVENT_VISIBILITY).toEqual({
+      eyewitness: "hidden",
+      prank_call: "hidden",
+      civilian_hurt: "hunter_visible",
+      nightfall: "hunter_visible",
+      rush_hour: "hunter_visible",
+    });
   });
 
-  it("names only variants that carry a report id, which is all the hunter may keep", () => {
-    for (const hidden of samples.filter((event) =>
-      HIDDEN_EVENT_KINDS.some((k) => k === event.kind),
-    )) {
+  it("has a row for every variant and no row for anything else", () => {
+    expect(Object.keys(EVENT_VISIBILITY).sort()).toEqual(samples.map((event) => event.kind).sort());
+  });
+
+  it("hides only variants that carry a report id, which is all the hunter may keep", () => {
+    for (const hidden of samples.filter((event) => isHiddenEventKind(event.kind))) {
       expect(hidden).toHaveProperty("reportId");
     }
   });

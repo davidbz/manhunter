@@ -20,7 +20,7 @@
  */
 
 import type { Balance, CriminalProfileWeights, DistrictProperties } from "./balance";
-import type { CriminalAction, CriminalState } from "./criminal";
+import { type CriminalAction, type CriminalState, heatFactorOf } from "./criminal";
 import { districtPropertiesAt, witnessDensityAt } from "./exposure";
 import type { GraphLogic, Traversal } from "./graph";
 import type { NodeId } from "./ids";
@@ -275,7 +275,7 @@ export const createCriminalAiLogic = (deps: AiDeps): CriminalAiLogic => ({
       weights,
       traversal: traversalOf(balance, situation),
       exitNodeIds: situation.map.exits.map((exit) => exit.nodeId),
-      heatFactor: clamp(situation.criminal.heat / balance.criminal.heatMax, NONE, FULL),
+      heatFactor: heatFactorOf(balance.criminal, situation.criminal.heat),
     };
     const stationary = stationaryCandidates(perception);
     const room = Math.max(LIMITS.maxAiCandidates - stationary.length, NONE);
