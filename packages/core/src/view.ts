@@ -17,7 +17,8 @@
  * are redacted from the data lists that declare them.
  */
 
-import { type GameEvent, HIDDEN_EVENT_KINDS, type HiddenEvent } from "./events";
+import type { Belief } from "./belief";
+import { type GameEvent, type HiddenEvent, isHiddenEventKind } from "./events";
 import type { HunterState } from "./hunter";
 import type { NodeId, ReportId } from "./ids";
 import type { MapGraph } from "./map";
@@ -40,7 +41,7 @@ export type ReportArrivedEvent = {
   readonly reportId: ReportId;
 };
 
-/** Derived from `HIDDEN_EVENT_KINDS`, so a variant cannot be redacted in one place only. */
+/** Derived from `EVENT_VISIBILITY`, so a variant cannot be redacted in one place only. */
 export type HunterEvent = Exclude<GameEvent, HiddenEvent> | ReportArrivedEvent;
 
 export type HunterView = {
@@ -50,6 +51,11 @@ export type HunterView = {
   /** Only reports that have landed by `clock.turn`. */
   readonly reports: readonly HunterReport[];
   readonly events: readonly HunterEvent[];
+  /**
+   * The heatmap (DESIGN.md "Probability heatmap"). It is the hunter's own inference, built from
+   * this list's inputs and nothing else, so it crosses unredacted (PLAN M3.6b).
+   */
+  readonly belief: Belief;
   readonly casualties: number;
   /** Derived from the config, which the hunter may not see, because it names the profile. */
   readonly turnsRemaining: Turn;
@@ -77,8 +83,7 @@ const redactReport = (report: Report): HunterReport => ({
   content: report.content,
 });
 
-const isHidden = (event: GameEvent): event is HiddenEvent =>
-  HIDDEN_EVENT_KINDS.some((kind) => kind === event.kind);
+const isHidden = (event: GameEvent): event is HiddenEvent => isHiddenEventKind(event.kind);
 
 const redactEvent = (event: GameEvent): HunterEvent =>
   isHidden(event) ? { kind: "report_arrived", turn: event.turn, reportId: event.reportId } : event;
@@ -95,6 +100,7 @@ export const toHunterView = (world: SealedWorld): HunterView => {
       .filter((report) => report.receivedAtTurn <= now)
       .map((report) => redactReport(report)),
     events: state.events.map((event) => redactEvent(event)),
+    belief: state.belief,
     casualties: state.casualties,
     turnsRemaining: Math.max(state.config.maxTurns - now, NO_TURNS_REMAINING),
     outcome: state.outcome,

@@ -8,6 +8,7 @@
  * than in a generator object, so a saved world resumes the same stream.
  */
 
+import { type Belief, pointBelief } from "./belief";
 import type { GameConfig } from "./config";
 import type { CriminalState } from "./criminal";
 import type { GameEvent } from "./events";
@@ -43,6 +44,12 @@ export type WorldState = {
   /** Every report ever generated. One with `receivedAtTurn` after now has not landed yet. */
   readonly reports: readonly Report[];
   readonly events: readonly GameEvent[];
+  /**
+   * Where the hunter thinks the criminal is. State rather than a derivation, so that a bot or a
+   * replay reads one distribution off the world instead of accumulating its own (PLAN M3.6b);
+   * the consequences phase advances it once per turn (PLAN M3.8a).
+   */
+  readonly belief: Belief;
   readonly casualties: number;
   readonly outcome: GameOutcome;
 };
@@ -51,13 +58,23 @@ export const IN_PROGRESS: GameOutcome = { kind: "in_progress" };
 
 const NO_CASUALTIES = 0;
 
-type WorldStateInput = Omit<WorldState, "reports" | "events" | "casualties" | "outcome">;
+type WorldStateInput = Omit<WorldState, "reports" | "events" | "belief" | "casualties" | "outcome">;
 
-/** A world at turn zero: the parts a game is assembled from, and nothing having happened yet. */
+/**
+ * A world at turn zero: the parts a game is assembled from, and nothing having happened yet.
+ *
+ * The belief is derived rather than passed in, like the empty report list beside it: before the
+ * hunt has run a turn the only place the criminal has certainly been is the crime scene, which
+ * both sides know (`MapGraph.incidentNodeId`, PLAN M1.2).
+ */
 export const makeWorldState = (input: WorldStateInput): WorldState => ({
   ...input,
   reports: [],
   events: [],
+  belief: pointBelief(
+    input.map.nodes.map((node) => node.id),
+    input.map.incidentNodeId,
+  ),
   casualties: NO_CASUALTIES,
   outcome: IN_PROGRESS,
 });

@@ -162,6 +162,17 @@ describe("reports", () => {
     expect(basePrankRate).toBeLessThan(maxPrankRate);
     expect(maxPrankRate).toBeLessThan(RATE_MAX);
   });
+
+  it("leaves room for a witness to be wrong without making most of them wrong", () => {
+    const { falseReportRate } = BALANCE.reports;
+    expect(falseReportRate).toBeGreaterThan(RATE_MIN);
+    expect(falseReportRate).toBeLessThan(RATE_MAX / 2);
+  });
+
+  /** A canvass is immediate because the hunter is there; nobody asked for the rest (PLAN M3.6). */
+  it("never delivers an unprompted call the turn it was made", () => {
+    expect(BALANCE.reports.unpromptedDelayTurns).toBeGreaterThan(0);
+  });
 });
 
 describe("criminal pools", () => {

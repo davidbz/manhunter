@@ -20,7 +20,12 @@
 
 import type { Balance, DistrictProperties } from "./balance";
 import { districtPropertiesAt, witnessDensityAt } from "./exposure";
-import { blockedEdgeIdsAt, type HunterAction, type HunterActionKind } from "./hunter";
+import {
+  blockedEdgeIdsAt,
+  type HunterAction,
+  type HunterActionKind,
+  trustFactorOf,
+} from "./hunter";
 import type { EdgeId, NodeId } from "./ids";
 import {
   makeReport,
@@ -193,27 +198,12 @@ const validateNodeTarget: ActionCheck<NodeAction> = ({ world, action }) =>
     ? null
     : { kind: "unknown_node", nodeId: action.nodeId };
 
-const FULL_TRUST = 1;
-const NO_TRUST = 0;
-
-/**
- * The hunter's standing as a fraction of its range. No guard against an empty range: `Balance` is
- * `typeof BALANCE` over an `as const` table, so its trust bounds are literal types and a range
- * with no span is not a value this can be handed. Widening them for a sweep (M4.3) is what would
- * make the division fallible, and that task is where the guard would then belong.
- */
-const trustFactorOf = (balance: Balance, trust: number): number =>
-  clamp(
-    (trust - balance.hunter.trustMin) / (balance.hunter.trustMax - balance.hunter.trustMin),
-    NO_TRUST,
-    FULL_TRUST,
-  );
-
 /**
  * What is at the node. This is the one place a hunter-facing producer reads the criminal's true
- * position: the doubt a report carries is its hidden `accuracy`, not a blurred location, and
- * perturbing the reported node by that accuracy is PLAN M3.6's. Seeing nothing is evidence too -
- * `no_sighting` is what M3.6b's heatmap prunes with.
+ * position: the doubt a report carries is its hidden `accuracy`, not a blurred location. A sighting
+ * that names the wrong node is a mistaken witness rather than a hedged one, and `intel.ts` is where
+ * those come from. Seeing nothing is evidence too - `no_sighting` is what M3.6b's heatmap prunes
+ * with.
  */
 const observationAt = (world: WorldState, nodeId: NodeId): ReportContent =>
   world.criminal.nodeId === nodeId
@@ -293,10 +283,10 @@ const CANVASS: IntelSource = {
   source: "witness",
   chance: ({ world, balance, properties }) =>
     witnessDensityAt(balance.time, properties, world.clock.hour) *
-    trustFactorOf(balance, world.hunter.trust) *
+    trustFactorOf(balance.hunter, world.hunter.trust) *
     reportVolumeFactor(balance.actions.trueBriefing, world.hunter.briefingTurns.length),
   accuracy: ({ world, balance }) =>
-    sightingAccuracy(balance.reports, trustFactorOf(balance, world.hunter.trust)),
+    sightingAccuracy(balance.reports, trustFactorOf(balance.hunter, world.hunter.trust)),
   delay: (_rng, _lookout, state) => ({ state, value: CANVASS_DELAY }),
 };
 

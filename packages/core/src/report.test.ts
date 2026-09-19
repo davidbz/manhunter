@@ -6,6 +6,7 @@ import {
   HIDDEN_REPORT_FIELDS,
   makeReport,
   nextReportId,
+  prankRate,
   reportVolumeFactor,
   sightingAccuracy,
   UNKNOWN_TRAVEL_MODE,
@@ -118,6 +119,26 @@ describe("reportVolumeFactor", () => {
   it("does not compound, however many briefings are given", () => {
     expect(reportVolumeFactor(settings, 2)).toBe(settings.reportVolumeMultiplier);
     expect(reportVolumeFactor(settings, 10)).toBe(settings.reportVolumeMultiplier);
+  });
+});
+
+describe("prankRate", () => {
+  const settings = { basePrankRate: 0.05, prankRatePerBriefing: 0.04, maxPrankRate: 0.4 };
+
+  it("rings a little even with the hunt off the news", () => {
+    expect(prankRate(settings, 0)).toBe(settings.basePrankRate);
+  });
+
+  /** The half of the bargain `reportVolumeFactor` does not make: attention buys cranks too. */
+  it("rises with every briefing given, unlike the volume it comes with", () => {
+    expect(prankRate(settings, 1)).toBeCloseTo(
+      settings.basePrankRate + settings.prankRatePerBriefing,
+    );
+    expect(prankRate(settings, 2)).toBeGreaterThan(prankRate(settings, 1));
+  });
+
+  it("never fills the feed, however many briefings are given", () => {
+    expect(prankRate(settings, 100)).toBe(settings.maxPrankRate);
   });
 });
 

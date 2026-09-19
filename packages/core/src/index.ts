@@ -17,23 +17,49 @@ export type {
 export { createCriminalAiLogic, toCriminalSituation } from "./ai";
 export type {
   Balance,
+  BeliefSettings,
   CriminalProfileWeights,
   DistrictProperties,
   MapGenerationSettings,
 } from "./balance";
 export { BALANCE } from "./balance";
+export type {
+  Belief,
+  BeliefCell,
+  BeliefEvidence,
+  BeliefLogic,
+  BeliefObservation,
+  BeliefRequest,
+} from "./belief";
+export {
+  BELIEF_MASS_TOLERANCE,
+  beliefMassAt,
+  createBeliefLogic,
+  pointBelief,
+  toBeliefEvidence,
+  uniformBelief,
+} from "./belief";
 export type { Difficulty, GameConfig, GameSetup, MapConfig } from "./config";
 export type {
   CriminalAction,
   CriminalKnowledge,
   CriminalProfile,
   CriminalState,
+  HeatBounds,
 } from "./criminal";
-export { EMPTY_CRIMINAL_KNOWLEDGE, makeCriminalState } from "./criminal";
+export { EMPTY_CRIMINAL_KNOWLEDGE, heatFactorOf, makeCriminalState } from "./criminal";
 export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
 export { createDistrictLogic } from "./districts";
-export type { GameEvent, GameEventKind, HiddenEvent, HiddenEventKind } from "./events";
-export { HIDDEN_EVENT_KINDS } from "./events";
+export type {
+  EventVisibility,
+  GameEvent,
+  GameEventKind,
+  HiddenEvent,
+  HiddenEventKind,
+} from "./events";
+export { EVENT_VISIBILITY, isHiddenEventKind } from "./events";
+export type { EventLogic, EventRequest, EventResult } from "./eventtable";
+export { createEventLogic } from "./eventtable";
 export type { DistrictTable } from "./exposure";
 export { districtPropertiesAt, witnessDensityAt } from "./exposure";
 export type { GameLogic, GameRequest, GameResult } from "./game";
@@ -62,10 +88,13 @@ export type {
   HunterActionKind,
   HunterState,
   Roadblock,
+  TrustBounds,
 } from "./hunter";
-export { blockedEdgeIdsAt, makeHunterState } from "./hunter";
+export { blockedEdgeIdsAt, makeHunterState, trustFactorOf } from "./hunter";
 export type { EdgeId, NodeId, ReportId } from "./ids";
 export { makeEdgeId, makeNodeId, makeReportId } from "./ids";
+export type { IntelDraw, IntelLogic, IntelRequest } from "./intel";
+export { createIntelLogic } from "./intel";
 export type {
   BridgeEdge,
   DistrictType,
@@ -94,6 +123,7 @@ export { createMinCutLogic } from "./mincut";
 export type {
   AccuracySettings,
   HiddenReportField,
+  PrankSettings,
   Report,
   ReportContent,
   ReportInput,
@@ -105,6 +135,7 @@ export {
   HIDDEN_REPORT_FIELDS,
   makeReport,
   nextReportId,
+  prankRate,
   reportVolumeFactor,
   sightingAccuracy,
   UNKNOWN_TRAVEL_MODE,

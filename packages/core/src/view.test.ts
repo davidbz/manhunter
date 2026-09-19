@@ -1,8 +1,10 @@
 import { fc, test } from "@fast-check/vitest";
 import { describe, expect, it } from "vitest";
+import { pointBelief } from "./belief";
 import type { GameConfig } from "./config";
 import { makeCriminalState } from "./criminal";
 import type { GameEvent } from "./events";
+import { EVENT_VISIBILITY } from "./events";
 import { makeHunterState } from "./hunter";
 import { makeEdgeId, makeNodeId, makeReportId } from "./ids";
 import type { MapGraph } from "./map";
@@ -99,6 +101,10 @@ const view: HunterView = {
   }),
   reports: [hunterReport],
   events: [{ kind: "nightfall", turn: TURN }],
+  belief: pointBelief(
+    map.nodes.map((node) => node.id),
+    downtown,
+  ),
   casualties: 0,
   turnsRemaining: TURNS_REMAINING,
   outcome: IN_PROGRESS,
@@ -154,6 +160,19 @@ const arbitraryReport: fc.Arbitrary<Report> = fc
         : { kind: "no_sighting", nodeId: downtown },
     }),
   );
+
+/**
+ * One of every variant, which the test below asserts against `EVENT_VISIBILITY`'s own rows. A
+ * variant added to `GameEvent` cannot compile until it has a row there, and cannot reach the view
+ * until its projection is asserted here (PLAN M3.7a).
+ */
+const everyEventVariant: readonly GameEvent[] = [
+  { kind: "eyewitness", turn: TURN, reportId: makeReportId("report-1") },
+  { kind: "prank_call", turn: TURN, reportId: makeReportId("report-2") },
+  { kind: "civilian_hurt", turn: TURN, nodeId: downtown },
+  { kind: "nightfall", turn: TURN },
+  { kind: "rush_hour", turn: TURN },
+];
 
 /** Covers every variant, the two hidden ones included: they are what the projection is for. */
 const arbitraryEvent: fc.Arbitrary<GameEvent> = fc.oneof(
@@ -258,6 +277,21 @@ describe("toHunterView", () => {
     expect(toHunterView(seal(world)).events).toEqual([hurt]);
   });
 
+  it("projects every variant the way EVENT_VISIBILITY declares, leaving none to default in", () => {
+    const world = { ...sampleWorld(), events: everyEventVariant };
+    const projected = toHunterView(seal(world));
+
+    expect(Object.keys(EVENT_VISIBILITY).sort()).toEqual(
+      everyEventVariant.map((event) => event.kind).sort(),
+    );
+    expect(projected.events).toHaveLength(everyEventVariant.length);
+    for (const [index, event] of everyEventVariant.entries()) {
+      expect(projected.events[index]?.kind).toBe(
+        EVENT_VISIBILITY[event.kind] === "hidden" ? "report_arrived" : event.kind,
+      );
+    }
+  });
+
   it("round-trips through JSON, because the UI receives it across a boundary", () => {
     const projected = toHunterView(seal(sampleWorld()));
 
@@ -284,7 +318,7 @@ describe("toHunterView", () => {
 
   /**
    * The point of the event projection: the feed may say a report landed, never what kind it was.
-   * Named literally rather than read off `HIDDEN_EVENT_KINDS`, for the same reason the hidden
+   * Named literally rather than read off `EVENT_VISIBILITY`, for the same reason the hidden
    * report fields are - a test that asks the constant what to forbid goes vacuous the moment the
    * constant is the thing that is wrong, which is exactly the mutation this has to catch.
    */
