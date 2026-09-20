@@ -21,6 +21,8 @@
 import type { Balance } from "./balance";
 import type { GameEvent, GameEventKind } from "./events";
 import { districtPropertiesAt, witnessDensityAt } from "./exposure";
+import type { ReportId } from "./ids";
+import type { Report, ReportTruth } from "./report";
 import type { Rng, RngDraw } from "./rng";
 import type { Hour } from "./time";
 import { HOURS_PER_DAY, timeOfDayAt } from "./time";
@@ -61,8 +63,11 @@ const CERTAIN = 1;
 /** A criminal whose profile has no behaviour hurts nobody. */
 const NO_CHANCE = 0;
 const NOBODY_ABOUT = 0;
+const NO_ARRIVALS = 0;
 const ONE_CASUALTY = 1;
 const ONE_HOUR = 1;
+/** The one thing an announcement must never let the hunter tell apart (DESIGN.md "Reports"). */
+const INVENTED: ReportTruth = "prank";
 
 /**
  * One thing the world can do in a turn, as data. `announce` may name more than one event, which
@@ -76,6 +81,62 @@ type EventDefinition = {
   readonly announce: (scene: Scene) => readonly GameEvent[];
   readonly apply: (world: WorldState) => WorldState;
 };
+
+/** The variants that announce a report, and therefore the only two that carry a `reportId`. */
+type ReportEventKind = Extract<GameEvent, { readonly reportId: ReportId }>["kind"];
+
+/**
+ * The reports the intel phase just landed - the filter `toBeliefEvidence` uses, for the same
+ * reason. Its position in the turn is what decides the set: events is phase 2 and planning is
+ * phase 3, so what this sees is what the city volunteered, never what the hunter asked for on the
+ * turn they asked for it (PLAN M3.8a's finding, decided at M3.7b; see the note there).
+ */
+const arrivals = (scene: Scene): readonly Report[] =>
+  scene.world.reports.filter((report) => report.receivedAtTurn === scene.world.clock.turn);
+
+const announced = (scene: Scene, names: (report: Report) => boolean): readonly Report[] =>
+  arrivals(scene).filter(names);
+
+/**
+ * One entry over the reports of a turn rather than one entry per report: `announce` may name more
+ * than one event, so a phone ringing twice is two events out of a single table row, and no loop
+ * over reports lives inside `fire` (architecture rule 6, PLAN M3.7a's note).
+ *
+ * Both are certain, because a report that landed is a fact and not a lottery; the draw they spend
+ * is the table's own discipline, not a chance they might not fire.
+ */
+const announcement = (
+  kind: ReportEventKind,
+  names: (report: Report) => boolean,
+): EventDefinition => ({
+  kind,
+  trigger: (scene) => announced(scene, names).length > NO_ARRIVALS,
+  weight: () => CERTAIN,
+  announce: (scene) =>
+    announced(scene, names).map((report) => ({
+      kind,
+      turn: scene.world.clock.turn,
+      reportId: report.id,
+    })),
+  /** Nothing: the report is already in the world, and the event is the city saying so. */
+  apply: (world) => world,
+});
+
+const isInvented = (report: Report): boolean => report.truth === INVENTED;
+
+/**
+ * Somebody who rang in something they saw (DESIGN.md "Events"). Every arrival that is not invented
+ * falls here, a mistaken witness included: what they got wrong they got wrong by being wrong, not
+ * by lying, and the hunter sees the same `report_arrived` for both anyway (PLAN M3.2).
+ */
+const EYEWITNESS: EventDefinition = announcement("eyewitness", (report) => !isInvented(report));
+
+/**
+ * Somebody who rang in something they made up. This is the variant that makes both of these
+ * hidden: its kind names which report is a prank, which is exactly what `truth` is hidden for, so
+ * it may only ever reach the hunter through M3.2's projection.
+ */
+const PRANK_CALL: EventDefinition = announcement("prank_call", isInvented);
 
 const hourBefore = (hour: Hour): Hour => (hour + HOURS_PER_DAY - ONE_HOUR) % HOURS_PER_DAY;
 
@@ -93,6 +154,21 @@ const NIGHTFALL: EventDefinition = {
   weight: () => CERTAIN,
   announce: ({ world }) => [{ kind: "nightfall", turn: world.clock.turn }],
   /** Nothing: the districts already read the hour, so dark is a state the event only announces. */
+  apply: (world) => world,
+};
+
+/**
+ * The city filling up (DESIGN.md "Events"), on the hours `balance.time` names. Unlike nightfall it
+ * is read as a state rather than a transition: `rushHourHours` is a list of hours and not a span,
+ * so the morning peak announces itself on each of its own hours, which is what the balance says it
+ * is. Nothing reads the traffic in the MVP, so like nightfall the entry only announces the clock.
+ */
+const RUSH_HOUR: EventDefinition = {
+  kind: "rush_hour",
+  trigger: ({ world, balance }) =>
+    balance.time.rushHourHours.some((hour) => hour === world.clock.hour),
+  weight: () => CERTAIN,
+  announce: ({ world }) => [{ kind: "rush_hour", turn: world.clock.turn }],
   apply: (world) => world,
 };
 
@@ -126,7 +202,13 @@ const CIVILIAN_HURT: EventDefinition = {
 };
 
 /** In `GameEvent`'s own order, which is the order the stream is drawn in. */
-const EVENT_TABLE: readonly EventDefinition[] = [CIVILIAN_HURT, NIGHTFALL];
+const EVENT_TABLE: readonly EventDefinition[] = [
+  EYEWITNESS,
+  PRANK_CALL,
+  CIVILIAN_HURT,
+  NIGHTFALL,
+  RUSH_HOUR,
+];
 
 type EventDraw = RngDraw<EventResult>;
 

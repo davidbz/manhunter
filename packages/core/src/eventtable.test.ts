@@ -8,8 +8,9 @@ import type { GameEvent } from "./events";
 import type { EventResult } from "./eventtable";
 import { createEventLogic } from "./eventtable";
 import { makeHunterState } from "./hunter";
-import { makeEdgeId, makeNodeId, type NodeId } from "./ids";
+import { makeEdgeId, makeNodeId, makeReportId, type NodeId } from "./ids";
 import { type MapGraph, makeEdge, makeExit, makeNode } from "./map";
+import { makeReport, type Report, type ReportTruth } from "./report";
 import { createRng } from "./rng";
 import { makeClock, type Turn } from "./time";
 import { makeWorldState, type WorldState } from "./world";
@@ -31,6 +32,7 @@ const START_CASH = 250;
 const CALM = 0;
 
 const NIGHTFALL_HOUR = BALANCE.time.nightStartHour;
+const MORNING_RUSH_HOUR = BALANCE.time.rushHourHours[0];
 const LATE_NIGHT_HOUR = 23;
 const NOON = 12;
 const TURNS_PER_DAY = 24;
@@ -80,34 +82,62 @@ type WorldOptions = {
   readonly nodeId?: NodeId;
   readonly profile?: CriminalProfile;
   readonly seed?: number;
+  readonly reports?: readonly Report[];
 };
 
 /** `hour` is the hour it is now: the clock is built from it, so a turn is free to be anything. */
 const worldAt = (options: WorldOptions = {}): WorldState => {
   const hour = options.hour ?? NOON;
   const turn = options.turn ?? FIRST_TURN;
-  return makeWorldState({
-    config: { ...config, startHour: hour - turn },
-    rng: rng.seed(options.seed ?? SEED),
-    clock: makeClock(hour - turn, turn),
-    map: city,
-    hunter: makeHunterState({
-      actionPoints: START_ACTION_POINTS,
-      budget: START_BUDGET,
-      trust: START_TRUST,
-      pressure: START_PRESSURE,
+  return {
+    ...makeWorldState({
+      config: { ...config, startHour: hour - turn },
+      rng: rng.seed(options.seed ?? SEED),
+      clock: makeClock(hour - turn, turn),
+      map: city,
+      hunter: makeHunterState({
+        actionPoints: START_ACTION_POINTS,
+        budget: START_BUDGET,
+        trust: START_TRUST,
+        pressure: START_PRESSURE,
+      }),
+      criminal: makeCriminalState({
+        nodeId: options.nodeId ?? downtown,
+        travelMode: "foot",
+        profile: options.profile ?? "amateur",
+        stamina: START_STAMINA,
+        heat: CALM,
+        cash: START_CASH,
+        desperation: CALM,
+      }),
     }),
-    criminal: makeCriminalState({
-      nodeId: options.nodeId ?? downtown,
-      travelMode: "foot",
-      profile: options.profile ?? "amateur",
-      stamina: START_STAMINA,
-      heat: CALM,
-      cash: START_CASH,
-      desperation: CALM,
-    }),
-  });
+    reports: options.reports ?? [],
+  };
 };
+
+const NO_DELAY: Turn = 0;
+const LATE: Turn = 2;
+const FULL_ACCURACY = 1;
+const NO_ACCURACY = 0;
+
+/** A call as `intel.ts` files one: an invented one comes in as a tip and is worth nothing. */
+const callOf = (id: string, truth: ReportTruth, observedAtTurn: Turn, delay: Turn): Report =>
+  makeReport({
+    id: makeReportId(id),
+    source: truth === "prank" ? "tip" : "witness",
+    observedAtTurn,
+    deliveryDelayTurns: delay,
+    content: { kind: "sighting", nodeId: park, travelMode: "foot" },
+    truth,
+    accuracy: truth === "prank" ? NO_ACCURACY : FULL_ACCURACY,
+  });
+
+/**
+ * A deserted park in the small hours, so the announcements are the only entries that can trigger
+ * and what fired is what the phone did.
+ */
+const hearing = (reports: readonly Report[], turn: Turn): WorldState =>
+  worldAt({ hour: LATE_NIGHT_HOUR, nodeId: park, turn, reports });
 
 const withDistrict = (
   district: "downtown" | "park",
@@ -249,6 +279,151 @@ describe("civilian hurt", () => {
 
     expect(kinds(fired.events, "civilian_hurt")).toEqual([]);
     expect(fired.world.rng).not.toEqual(start.rng);
+  });
+});
+
+describe("eyewitness and prank call", () => {
+  it("announces the report that landed this turn", () => {
+    const call = callOf("report-0", "true", FIRST_TURN, NO_DELAY);
+
+    const fired = events.fire({ world: hearing([call], FIRST_TURN), balance: BALANCE });
+
+    expect(fired.events).toEqual([{ kind: "eyewitness", turn: FIRST_TURN, reportId: call.id }]);
+  });
+
+  it("announces once per report, however many landed together", () => {
+    const calls = [
+      callOf("report-0", "true", FIRST_TURN, NO_DELAY),
+      callOf("report-1", "true", FIRST_TURN, NO_DELAY),
+      callOf("report-2", "true", FIRST_TURN, NO_DELAY),
+    ];
+
+    const fired = events.fire({ world: hearing(calls, FIRST_TURN), balance: BALANCE });
+
+    expect(fired.events).toEqual(
+      calls.map((call) => ({ kind: "eyewitness", turn: FIRST_TURN, reportId: call.id })),
+    );
+  });
+
+  it("calls an invented report a prank and everything else an eyewitness", () => {
+    const seen = callOf("report-0", "true", FIRST_TURN, NO_DELAY);
+    const mistaken = callOf("report-1", "false", FIRST_TURN, NO_DELAY);
+    const invented = callOf("report-2", "prank", FIRST_TURN, NO_DELAY);
+
+    const fired = events.fire({
+      world: hearing([seen, mistaken, invented], FIRST_TURN),
+      balance: BALANCE,
+    });
+
+    expect(fired.events).toEqual([
+      { kind: "eyewitness", turn: FIRST_TURN, reportId: seen.id },
+      { kind: "eyewitness", turn: FIRST_TURN, reportId: mistaken.id },
+      { kind: "prank_call", turn: FIRST_TURN, reportId: invented.id },
+    ]);
+  });
+
+  it("says nothing on a turn nothing landed on, and does not roll for it", () => {
+    const world = hearing([], FIRST_TURN);
+
+    const fired = events.fire({ world, balance: BALANCE });
+
+    expect(fired.events).toEqual([]);
+    expect(fired.world.rng).toEqual(world.rng);
+  });
+
+  it("says nothing about a report that has not landed yet", () => {
+    const late = callOf("report-0", "true", FIRST_TURN, LATE);
+
+    expect(events.fire({ world: hearing([late], FIRST_TURN), balance: BALANCE }).events).toEqual(
+      [],
+    );
+  });
+
+  it("stamps a late report with the turn the news arrived, not the turn it was seen", () => {
+    const late = callOf("report-0", "true", FIRST_TURN, SECOND_TURN);
+
+    const fired = events.fire({ world: hearing([late], SECOND_TURN), balance: BALANCE });
+
+    expect(fired.events).toEqual([{ kind: "eyewitness", turn: SECOND_TURN, reportId: late.id }]);
+  });
+
+  it("says nothing twice about a report it announced on an earlier turn", () => {
+    const call = callOf("report-0", "true", FIRST_TURN, NO_DELAY);
+
+    expect(events.fire({ world: hearing([call], SECOND_TURN), balance: BALANCE }).events).toEqual(
+      [],
+    );
+  });
+
+  /**
+   * The canvass decision (PLAN M3.7b's note): a canvass answer is never announced, because it is
+   * filed in the planning phase of the turn whose events have already fired, and by the next turn
+   * the arrival filter no longer matches it. Pinned so that it stays a decision rather than
+   * becoming a surprise.
+   */
+  it("never announces a canvass answer, which lands after the phase that would name it", () => {
+    const answer = callOf("report-0", "true", FIRST_TURN, NO_DELAY);
+    const beforeTheHunterAsked = events.fire({
+      world: hearing([], FIRST_TURN),
+      balance: BALANCE,
+    });
+
+    const nextTurn = events.fire({ world: hearing([answer], SECOND_TURN), balance: BALANCE });
+
+    expect(beforeTheHunterAsked.events).toEqual([]);
+    expect(nextTurn.events).toEqual([]);
+  });
+
+  it("costs one draw for the calls and one for the pranks", () => {
+    const world = hearing(
+      [
+        callOf("report-0", "true", FIRST_TURN, NO_DELAY),
+        callOf("report-1", "prank", FIRST_TURN, NO_DELAY),
+      ],
+      FIRST_TURN,
+    );
+
+    expect(events.fire({ world, balance: BALANCE }).world.rng).toEqual(
+      rng.float(rng.float(world.rng).state).state,
+    );
+  });
+
+  it("changes nothing but the feed", () => {
+    const world = hearing([callOf("report-0", "true", FIRST_TURN, NO_DELAY)], FIRST_TURN);
+
+    const fired = events.fire({ world, balance: BALANCE });
+
+    expect(fired.world).toEqual({ ...world, rng: fired.world.rng, events: fired.events });
+  });
+});
+
+describe("rush hour", () => {
+  for (const hour of BALANCE.time.rushHourHours) {
+    it(`fires at ${hour}:00, which balance names`, () => {
+      const fired = events.fire({ world: worldAt({ hour, nodeId: park }), balance: DESERTED });
+
+      expect(fired.events).toEqual([{ kind: "rush_hour", turn: FIRST_TURN }]);
+    });
+  }
+
+  it("does not fire at an hour balance does not name", () => {
+    const fired = events.fire({ world: worldAt({ hour: NOON, nodeId: park }), balance: DESERTED });
+
+    expect(kinds(fired.events, "rush_hour")).toEqual([]);
+  });
+
+  it("fires once for every hour of the day balance names", () => {
+    const fired = overTurns(worldAt({ hour: NOON, nodeId: park }), DESERTED, TURNS_PER_DAY);
+
+    expect(kinds(fired.events, "rush_hour")).toHaveLength(BALANCE.time.rushHourHours.length);
+  });
+
+  it("changes nothing but the feed", () => {
+    const world = worldAt({ hour: MORNING_RUSH_HOUR, nodeId: park });
+
+    const fired = events.fire({ world, balance: DESERTED });
+
+    expect(fired.world).toEqual({ ...world, rng: fired.world.rng, events: fired.events });
   });
 });
 

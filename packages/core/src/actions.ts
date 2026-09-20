@@ -19,6 +19,7 @@
  */
 
 import type { Balance, DistrictProperties } from "./balance";
+import { recentNodeIds } from "./criminal";
 import { districtPropertiesAt, witnessDensityAt } from "./exposure";
 import {
   blockedEdgeIdsAt,
@@ -27,6 +28,7 @@ import {
   trustFactorOf,
 } from "./hunter";
 import type { EdgeId, NodeId } from "./ids";
+import type { TravelMode } from "./map";
 import {
   makeReport,
   nextReportId,
@@ -34,6 +36,7 @@ import {
   type ReportSource,
   reportVolumeFactor,
   sightingAccuracy,
+  UNKNOWN_TRAVEL_MODE,
 } from "./report";
 import type { Rng, RngDraw, RngState } from "./rng";
 import type { Turn } from "./time";
@@ -198,17 +201,30 @@ const validateNodeTarget: ActionCheck<NodeAction> = ({ world, action }) =>
     ? null
     : { kind: "unknown_node", nodeId: action.nodeId };
 
+/** Only what is happening now carries a travel mode: the trail records where, never how. */
+const travelModeSeen = (
+  world: WorldState,
+  nodeId: NodeId,
+): TravelMode | typeof UNKNOWN_TRAVEL_MODE =>
+  world.criminal.nodeId === nodeId ? world.criminal.travelMode : UNKNOWN_TRAVEL_MODE;
+
 /**
- * What is at the node. This is the one place a hunter-facing producer reads the criminal's true
- * position: the doubt a report carries is its hidden `accuracy`, not a blurred location. A sighting
- * that names the wrong node is a mistaken witness rather than a hedged one, and `intel.ts` is where
- * those come from. Seeing nothing is evidence too - `no_sighting` is what M3.6b's heatmap prunes
- * with.
+ * What is at the node, over the last `lookbackTurns` turns. This is the one place a hunter-facing
+ * producer reads the criminal's true position: the doubt a report carries is its hidden
+ * `accuracy`, not a blurred location. A sighting that names the wrong node is a mistaken witness
+ * rather than a hedged one, and `intel.ts` is where those come from. Seeing nothing is evidence
+ * too - `no_sighting` is what M3.6b's heatmap prunes with.
+ *
+ * A lookback of more than one turn is footage, and footage of a node the criminal has since left
+ * is still a sighting - of the past. That is the whole of DESIGN.md's "CCTV: reliable, delayed by
+ * 1-2 turns": the delay is when the hunter reads it, the lookback is how far back it goes.
  */
-const observationAt = (world: WorldState, nodeId: NodeId): ReportContent =>
-  world.criminal.nodeId === nodeId
-    ? { kind: "sighting", nodeId, travelMode: world.criminal.travelMode }
-    : { kind: "no_sighting", nodeId };
+const observationAt = (world: WorldState, nodeId: NodeId, lookbackTurns: Turn): ReportContent => {
+  if (!recentNodeIds(world.criminal, lookbackTurns).includes(nodeId)) {
+    return { kind: "no_sighting", nodeId };
+  }
+  return { kind: "sighting", nodeId, travelMode: travelModeSeen(world, nodeId) };
+};
 
 /** Everything an intelligence source reads, derived once. */
 type Lookout = {
@@ -220,13 +236,16 @@ type Lookout = {
 /**
  * The shape both intelligence actions share: look at one node, maybe learn something, file it
  * late. They differ only in who is looking, how likely they are to see anything at all, how far
- * they can be trusted, and how long the paperwork takes - so those four are the entry, and
- * `gather` is the handler over them. PLAN M3.6 adds the sources the world produces unasked.
+ * they can be trusted, how far back they can see, and how long the paperwork takes - so those
+ * five are the entry, and `gather` is the handler over them. PLAN M3.6 adds the sources the
+ * world produces unasked.
  */
 type IntelSource = {
   readonly source: ReportSource;
   readonly chance: (lookout: Lookout) => number;
   readonly accuracy: (lookout: Lookout) => number;
+  /** How many turns back the look reaches, this one included. */
+  readonly lookback: (lookout: Lookout) => Turn;
   readonly delay: (rng: Rng, lookout: Lookout, state: RngState) => RngDraw<Turn>;
 };
 
@@ -259,7 +278,7 @@ const gather = (rng: Rng, intel: IntelSource, context: ActionContext<NodeAction>
         source: intel.source,
         observedAtTurn: world.clock.turn,
         deliveryDelayTurns: delayed.value,
-        content: observationAt(world, action.nodeId),
+        content: observationAt(world, action.nodeId, intel.lookback(lookout)),
         truth: OBSERVED_TRUTH,
         accuracy: intel.accuracy(lookout),
       }),
@@ -269,6 +288,9 @@ const gather = (rng: Rng, intel: IntelSource, context: ActionContext<NodeAction>
 
 /** Knocking on doors is done in person, so what it learns is known the moment it is learned. */
 const CANVASS_DELAY: Turn = 0;
+
+/** A look that reaches no further back than the turn it is taken on. */
+const PRESENT_ONLY: Turn = 1;
 
 /**
  * How many people talk is the district's witness density scaled by the hunter's standing with
@@ -287,6 +309,8 @@ const CANVASS: IntelSource = {
     reportVolumeFactor(balance.actions.trueBriefing, world.hunter.briefingTurns.length),
   accuracy: ({ world, balance }) =>
     sightingAccuracy(balance.reports, trustFactorOf(balance.hunter, world.hunter.trust)),
+  /** A doorstep answers for the street as it is now. Yesterday is what the cameras are for. */
+  lookback: () => PRESENT_ONLY,
   delay: (_rng, _lookout, state) => ({ state, value: CANVASS_DELAY }),
 };
 
@@ -300,6 +324,7 @@ const PULL_CCTV: IntelSource = {
   source: "cctv",
   chance: ({ properties }) => properties.cctvCoverage,
   accuracy: ({ balance }) => balance.reports.cctvAccuracy,
+  lookback: ({ balance }) => balance.actions.pullCctv.lookbackTurns,
   delay: (rng, { balance }, state) =>
     rng.int(
       state,

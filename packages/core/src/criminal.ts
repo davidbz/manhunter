@@ -4,6 +4,7 @@
  */
 
 import type { EdgeId, NodeId } from "./ids";
+import { LIMITS } from "./limits";
 import type { TravelMode } from "./map";
 import type { Turn } from "./time";
 
@@ -20,6 +21,13 @@ export type CriminalKnowledge = {
 
 export type CriminalState = {
   readonly nodeId: NodeId;
+  /**
+   * Where the criminal was before now, most recent first, one entry per turn whether or not it
+   * moved. It is what lets a camera show footage of the past (`pullCctv.lookbackTurns`), which
+   * counts turns rather than places - a criminal that stood still for three turns was still
+   * there for three turns. Capped at `LIMITS.maxCriminalTrail` (PLAN M3.8b-2).
+   */
+  readonly trail: readonly NodeId[];
   readonly travelMode: TravelMode;
   readonly profile: CriminalProfile;
   readonly stamina: number;
@@ -40,11 +48,49 @@ export const EMPTY_CRIMINAL_KNOWLEDGE: CriminalKnowledge = {
   heardBriefingTurns: [],
 };
 
-/** A criminal at the start of a hunt: everything measured, and knowing nothing yet. */
-export const makeCriminalState = (input: Omit<CriminalState, "knowledge">): CriminalState => ({
+/** A criminal at the start of a hunt: everything measured, nowhere behind it, knowing nothing. */
+export const makeCriminalState = (
+  input: Omit<CriminalState, "knowledge" | "trail">,
+): CriminalState => ({
   ...input,
+  trail: [],
   knowledge: EMPTY_CRIMINAL_KNOWLEDGE,
 });
+
+/**
+ * The trail one turn on: where the criminal stood this turn goes to the front and the oldest
+ * entry falls off the end. Called once per turn by the resolution phase, before the move is
+ * applied, so `trail[0]` is always the turn before `nodeId`.
+ */
+export const trailAfter = (criminal: CriminalState): readonly NodeId[] =>
+  [criminal.nodeId, ...criminal.trail].slice(0, LIMITS.maxCriminalTrail);
+
+/**
+ * Where a look at this turn could still find the criminal, going back `lookbackTurns` turns and
+ * including this one. A lookback of one is the present alone, which is what a person standing in
+ * the street sees; anything more is footage (PLAN M3.4a's `pullCctv.lookbackTurns`).
+ */
+export const recentNodeIds = (criminal: CriminalState, lookbackTurns: Turn): readonly NodeId[] =>
+  [criminal.nodeId, ...criminal.trail].slice(0, lookbackTurns);
+
+/**
+ * What the criminal knows once it has run into a checkpoint. Recording the same edge twice would
+ * make the list grow with the hunt rather than with the map, so a block already known changes
+ * nothing - which also keeps the record a set in everything but type (architecture rule 3 leaves
+ * no `Set` in state).
+ */
+export const withKnownRoadblock = (
+  knowledge: CriminalKnowledge,
+  edgeId: EdgeId,
+): CriminalKnowledge => {
+  if (knowledge.knownRoadblockEdgeIds.includes(edgeId)) {
+    return knowledge;
+  }
+  return {
+    ...knowledge,
+    knownRoadblockEdgeIds: [...knowledge.knownRoadblockEdgeIds, edgeId],
+  };
+};
 
 /** The part of `balance.criminal` the heat meter's range is read from. */
 export type HeatBounds = {
