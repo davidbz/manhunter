@@ -2,7 +2,7 @@ import { fc, test } from "@fast-check/vitest";
 import { describe, expect, it } from "vitest";
 import { type ActionLogic, createActionLogic } from "./actions";
 import { type CriminalAiLogic, type CriminalSituation, createCriminalAiLogic } from "./ai";
-import { BALANCE } from "./balance";
+import { BALANCE, type Balance } from "./balance";
 import { BELIEF_MASS_TOLERANCE, beliefMassAt, createBeliefLogic } from "./belief";
 import type { GameConfig, GameSetup } from "./config";
 import type { CriminalAction, CriminalState } from "./criminal";
@@ -56,6 +56,7 @@ const START_STAMINA = 100;
 const START_HEAT = 20;
 const START_CASH = 250;
 const CALM = 0;
+const NO_CASUALTIES = 0;
 const FULL_ACCURACY = 1;
 const LATE = 2;
 
@@ -72,7 +73,7 @@ const PRESSURE_CEILING = BALANCE.hunter.pressureMax;
 /** Below the floor, which only a hand-built world can be: `create` starts inside the range. */
 const UNDERWATER_PRESSURE = -50;
 
-/** Long enough for pressure to reach its ceiling on its own, and for the heatmap to spread out. */
+/** An upper bound on a hunt, not a length: a real one ends on its own long before this. */
 const TURNS_SAMPLED = 60;
 const SAMPLE_SEEDS = 5_000;
 /** A hunt per run, map generation included, so the count is kept to what stays a fast suite. */
@@ -110,7 +111,9 @@ type WorldOptions = {
   readonly nodeId?: NodeId;
   readonly actionPoints?: number;
   readonly budget?: number;
+  readonly trust?: number;
   readonly pressure?: number;
+  readonly casualties?: number;
   readonly reports?: readonly Report[];
   readonly containments?: readonly Containment[];
   /** Whatever the criminal needs to be for the test: a meter, a trail, what it already knows. */
@@ -130,7 +133,7 @@ const worldAt = (options: WorldOptions = {}): WorldState => {
         ...makeHunterState({
           actionPoints: options.actionPoints ?? START_ACTION_POINTS,
           budget: options.budget ?? START_BUDGET,
-          trust: START_TRUST,
+          trust: options.trust ?? START_TRUST,
           pressure: options.pressure ?? START_PRESSURE,
         }),
         containments: options.containments ?? [],
@@ -149,6 +152,7 @@ const worldAt = (options: WorldOptions = {}): WorldState => {
       },
     }),
     reports: options.reports ?? [],
+    casualties: options.casualties ?? NO_CASUALTIES,
   };
 };
 
@@ -234,6 +238,7 @@ type StepOptions = {
   readonly action?: ActionLogic;
   readonly ai?: CriminalAiLogic;
   readonly actions?: readonly HunterAction[];
+  readonly balance?: Balance;
 };
 
 const stepOnce = (world: WorldState, options: StepOptions = {}): TurnResult =>
@@ -244,7 +249,11 @@ const stepOnce = (world: WorldState, options: StepOptions = {}): TurnResult =>
     action: options.action ?? action,
     ai: options.ai ?? STANDS_STILL,
     graph,
-  }).step({ world: seal(world), actions: options.actions ?? [], balance: BALANCE });
+  }).step({
+    world: seal(world),
+    actions: options.actions ?? [],
+    balance: options.balance ?? BALANCE,
+  });
 
 /** Every test below expects a turn to have been taken; the refused queue has its own block. */
 const turnOf = (result: TurnResult): TurnTaken => {
@@ -985,6 +994,145 @@ describe("a turn with nothing in it", () => {
   });
 });
 
+const TO_TERMINAL: CriminalAction = { kind: "move", toNodeId: terminal, travelMode: "foot" };
+const ROADBLOCK_TRUST = BALANCE.actions.roadblock.trustCost;
+const NO_TRUST = BALANCE.endConditions.trustCollapseAt;
+const CASUALTIES_TO_LOSE = BALANCE.endConditions.casualtiesToLose;
+const ONE_TURN: Turn = 1;
+
+/** A criminal whose profile is certain to hurt somebody, so the real table fires every turn. */
+const withCertainHarm = (): Balance => ({
+  ...BALANCE,
+  criminal: {
+    ...BALANCE.criminal,
+    profiles: {
+      ...BALANCE.criminal.profiles,
+      amateur: { ...BALANCE.criminal.profiles.amateur, civilianHarmChance: 1 },
+    },
+  },
+});
+
+const repeatedly = (world: WorldState, times: number, options: StepOptions = {}): WorldState => {
+  let played = world;
+  for (let taken = 0; taken < times; taken += 1) {
+    played = worldAfter(played, options);
+  }
+  return played;
+};
+
+describe("the turn that ends the hunt", () => {
+  it("leaves a hunt nothing has finished in progress", () => {
+    expect(worldAfter(worldAt()).outcome).toEqual({ kind: "in_progress" });
+  });
+
+  it("ends the hunt when the criminal walks onto an exit", () => {
+    const world = worldAt({ nodeId: park });
+    const stepped = worldAfter(world, { ai: criminalDoing(TO_TERMINAL) });
+
+    expect(stepped.criminal.nodeId).toBe(terminal);
+    expect(stepped.outcome).toEqual({ kind: "escaped", turn: ONE_TURN });
+  });
+
+  it("does not end it for a criminal one node short of the exit", () => {
+    const stepped = worldAfter(worldAt(), { ai: criminalDoing(TO_PARK) });
+
+    expect(stepped.outcome).toEqual({ kind: "in_progress" });
+  });
+
+  it("ends the hunt when an action spends the last of the public's trust", () => {
+    const stepped = worldAfter(worldAt({ trust: ROADBLOCK_TRUST }), { actions: [ROADBLOCK] });
+
+    expect(stepped.hunter.trust).toBe(NO_TRUST);
+    expect(stepped.outcome).toEqual({ kind: "trust_collapsed", turn: ONE_TURN });
+  });
+
+  it("leaves a hunter with a point of trust left on the case", () => {
+    const stepped = worldAfter(worldAt({ trust: ROADBLOCK_TRUST + 1 }), { actions: [ROADBLOCK] });
+
+    expect(stepped.outcome).toEqual({ kind: "in_progress" });
+  });
+
+  /**
+   * Through the real event table rather than a fake, so what reaches the threshold is the same
+   * `civilian_hurt` apply the hunt uses; only the profile's chance of it is turned up.
+   */
+  it("ends the hunt when the casualties the events did reach the threshold", () => {
+    const harmful = { events: createEventLogic({ rng }), balance: withCertainHarm() };
+    const played = repeatedly(worldAt(), CASUALTIES_TO_LOSE, harmful);
+
+    expect(played.casualties).toBe(CASUALTIES_TO_LOSE);
+    expect(played.outcome).toEqual({ kind: "casualties_exceeded", turn: CASUALTIES_TO_LOSE });
+  });
+
+  it("leaves the hunt running one casualty short of the threshold", () => {
+    const harmful = { events: createEventLogic({ rng }), balance: withCertainHarm() };
+    const played = repeatedly(worldAt(), CASUALTIES_TO_LOSE - 1, harmful);
+
+    expect(played.casualties).toBe(CASUALTIES_TO_LOSE - 1);
+    expect(played.outcome).toEqual({ kind: "in_progress" });
+  });
+
+  it("names the escape when the criminal reaches an exit on the turn a bystander is hurt", () => {
+    const world = worldAt({ nodeId: park, casualties: CASUALTIES_TO_LOSE - 1 });
+    const stepped = worldAfter(world, {
+      events: createEventLogic({ rng }),
+      balance: withCertainHarm(),
+      ai: criminalDoing(TO_TERMINAL),
+    });
+
+    expect(stepped.casualties).toBe(CASUALTIES_TO_LOSE);
+    expect(stepped.outcome).toEqual({ kind: "escaped", turn: ONE_TURN });
+  });
+});
+
+describe("a hunt that is already over", () => {
+  const finished = (): WorldState =>
+    worldAfter(worldAt({ trust: ROADBLOCK_TRUST }), { actions: [ROADBLOCK] });
+
+  it("refuses the turn and says how the hunt ended", () => {
+    expect(stepOnce(finished())).toEqual({
+      kind: "hunt_over",
+      outcome: { kind: "trust_collapsed", turn: ONE_TURN },
+    });
+  });
+
+  /** No phase runs at all: an ended hunt that still filed reports would still be being played. */
+  it("runs no phase: no report, no event, no criminal decision, no clock", () => {
+    const over = finished();
+    const watcher = eventsFiring([hurtAt(ONE_TURN)]);
+    const filing = intelFiling([sightingOf(park, ONE_TURN, FIRST_TURN)]);
+
+    expect(stepOnce(over, { intel: filing, events: watcher, ai })).toEqual({
+      kind: "hunt_over",
+      outcome: over.outcome,
+    });
+  });
+
+  it("is a fixed point: the same refusal however many times it is asked", () => {
+    const over = seal(finished());
+    const once = createTurnLogic({
+      intel: NO_INTEL,
+      events: NO_EVENTS,
+      belief,
+      action,
+      ai: STANDS_STILL,
+      graph,
+    });
+
+    const first = once.step({ world: over, actions: [], balance: BALANCE });
+    const tenth = once.step({ world: over, actions: [], balance: BALANCE });
+
+    expect(JSON.stringify(first)).toBe(JSON.stringify(tenth));
+  });
+
+  /** The queue is a bound on the request, so it is refused whether or not the hunt is running. */
+  it("still refuses an over-long queue first", () => {
+    const queue = Array.from({ length: LIMITS.maxQueuedActions + 1 }, () => BRIEFING);
+
+    expect(stepOnce(finished(), { actions: queue })).toMatchObject({ kind: "too_many_actions" });
+  });
+});
+
 const generation = createGenerationLogic({
   rng,
   topology: createTopologyLogic({ rng, graph }),
@@ -1008,6 +1156,9 @@ const SETUP: GameSetup = {
   difficulty: "standard",
 };
 
+/** Hard-coded rather than drawn, so a failure names the hunt that failed (PLAN M3.6's rule). */
+const ESCAPE_SEEDS: readonly number[] = [1, 2, 3, 7, 11, 101, 4242];
+
 const startedAt = (seed: number): WorldState => {
   const result = game.create({ setup: SETUP, seed, balance: BALANCE });
   if (result.kind !== "game") {
@@ -1016,13 +1167,35 @@ const startedAt = (seed: number): WorldState => {
   return unseal(result.world);
 };
 
-const play = (seed: number, turns: number, actions: readonly HunterAction[] = []): WorldState => {
-  let world = seal(startedAt(seed));
-  for (let taken = 0; taken < turns; taken += 1) {
-    world = turnOf(turn.step({ world, actions, balance: BALANCE })).world;
-  }
-  return unseal(world);
+/** A hunt and how long it lasted. The count is what `turns` means once a hunt can end early. */
+type Played = {
+  readonly world: WorldState;
+  readonly turns: number;
 };
+
+/**
+ * Plays up to `limit` turns, and stops when the hunt is over - which is what `step` starts saying
+ * once an end condition has fired (PLAN M3.8c). A passive hunter loses every seed in a handful of
+ * turns, so `limit` is an upper bound here and rarely the number reached.
+ */
+const playThrough = (
+  seed: number,
+  limit: number,
+  actions: readonly HunterAction[] = [],
+): Played => {
+  let world = seal(startedAt(seed));
+  for (let taken = 0; taken < limit; taken += 1) {
+    const result = turn.step({ world, actions, balance: BALANCE });
+    if (result.kind === "hunt_over") {
+      return { world: unseal(world), turns: taken };
+    }
+    world = turnOf(result).world;
+  }
+  return { world: unseal(world), turns: limit };
+};
+
+const play = (seed: number, turns: number, actions: readonly HunterAction[] = []): WorldState =>
+  playThrough(seed, turns, actions).world;
 
 describe("a hunt wired the way the app wires it", () => {
   it("draws the same turn twice from the same world", () => {
@@ -1068,13 +1241,52 @@ describe("a hunt wired the way the app wires it", () => {
   });
 
   it("keeps the clock and the turn count in step", () => {
-    const played = play(SEED, MAX_TURNS);
+    const played = playThrough(SEED, MAX_TURNS);
 
-    expect(played.clock).toEqual(makeClock(played.config.startHour, MAX_TURNS));
+    expect(played.world.clock).toEqual(makeClock(played.world.config.startHour, played.turns));
   });
 
-  it("does run out of quiet: pressure reaches its ceiling and stops there", () => {
-    expect(play(SEED, TURNS_SAMPLED).hunter.pressure).toBe(PRESSURE_CEILING);
+  /**
+   * Pressure climbing to its ceiling took 30 quiet turns, which no real hunt lasts now that the
+   * criminal reaching an exit ends it (PLAN M3.8c). The ceiling itself is pinned on a hand-built
+   * world above; what a real hunt can still show is that every quiet turn charges for itself.
+   */
+  it("charges the hunter for every quiet turn it takes", () => {
+    const played = playThrough(SEED, MAX_TURNS);
+
+    expect(played.world.hunter.pressure).toBe(START_PRESSURE + PRESSURE_PER_TURN * played.turns);
+  });
+
+  /**
+   * The AC's "a test that reaches it" for escape, through a whole hunt on a generated map rather
+   * than a hand-built one: an amateur walks out in a handful of turns unless something stops it,
+   * and in the MVP nothing does (PLAN Inbox, the reachable-capture entry).
+   */
+  it("ends a hunt the hunter does nothing about, by the exit", () => {
+    const played = playThrough(SEED, MAX_TURNS);
+
+    expect(played.world.outcome).toEqual({ kind: "escaped", turn: played.turns });
+    expect(played.world.map.exits.map((exit) => exit.nodeId)).toContain(
+      played.world.criminal.nodeId,
+    );
+  });
+
+  it("ends every hunt it is given, well inside the deadline", () => {
+    for (const seed of ESCAPE_SEEDS) {
+      const played = playThrough(seed, MAX_TURNS);
+
+      expect(played.world.outcome).toMatchObject({ kind: "escaped" });
+      expect(played.turns).toBeLessThan(MAX_TURNS);
+    }
+  });
+
+  it("refuses to take another turn once the hunt is over", () => {
+    const played = playThrough(SEED, MAX_TURNS);
+
+    expect(turn.step({ world: seal(played.world), actions: [], balance: BALANCE })).toEqual({
+      kind: "hunt_over",
+      outcome: played.world.outcome,
+    });
   });
 
   it("gets the criminal off the scene of its own incident", () => {
@@ -1083,8 +1295,12 @@ describe("a hunt wired the way the app wires it", () => {
     expect(played.criminal.nodeId).not.toBe(played.map.incidentNodeId);
   });
 
-  it("keeps a full trail behind the criminal, and no more than one", () => {
-    expect(play(SEED, MAX_TURNS).criminal.trail).toHaveLength(LIMITS.maxCriminalTrail);
+  it("keeps one trail entry behind the criminal for every turn it walked", () => {
+    const played = playThrough(SEED, MAX_TURNS);
+
+    expect(played.world.criminal.trail).toHaveLength(
+      Math.min(played.turns, LIMITS.maxCriminalTrail),
+    );
   });
 
   test.prop([fc.integer({ min: 1, max: SAMPLE_SEEDS })], { numRuns: PROPERTY_RUNS })(
@@ -1107,7 +1323,7 @@ describe("a hunt wired the way the app wires it", () => {
   );
 
   test.prop([fc.integer({ min: 1, max: SAMPLE_SEEDS })], { numRuns: PROPERTY_RUNS })(
-    "never lets the criminal's trail past its cap, however long the hunt runs",
+    "never lets the criminal's trail past its cap, whatever ends the hunt",
     (seed) => {
       const played = play(seed, TURNS_SAMPLED);
 

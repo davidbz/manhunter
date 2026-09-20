@@ -1,16 +1,32 @@
 import { fc, test } from "@fast-check/vitest";
 import { describe, expect, it } from "vitest";
-import type { GameConfig } from "./config";
+import { createActionLogic } from "./actions";
+import { createCriminalAiLogic } from "./ai";
+import { BALANCE } from "./balance";
+import { createBeliefLogic } from "./belief";
+import type { GameConfig, GameSetup } from "./config";
 import { makeCriminalState } from "./criminal";
+import { createDistrictLogic } from "./districts";
 import type { GameEvent } from "./events";
-import { makeHunterState } from "./hunter";
+import { createEventLogic } from "./eventtable";
+import { createGameLogic } from "./game";
+import { createGenerationLogic } from "./generate";
+import { createGraphLogic } from "./graph";
+import { type Containment, makeHunterState } from "./hunter";
 import { makeEdgeId, makeNodeId, makeReportId } from "./ids";
+import { createIntelLogic } from "./intel";
 import type { MapGraph } from "./map";
 import { makeEdge, makeExit, makeNode } from "./map";
+import { createMinCutLogic } from "./mincut";
 import type { Report } from "./report";
 import { makeReport } from "./report";
+import { createRiverLogic } from "./river";
 import { createRng } from "./rng";
+import { type SealedWorld, unseal } from "./sealed";
 import { makeClock } from "./time";
+import { createTopologyLogic } from "./topology";
+import { createTurnLogic } from "./turn";
+import { createValidatorLogic } from "./validator";
 import type { GameOutcome, WorldState } from "./world";
 import { IN_PROGRESS, makeWorldState } from "./world";
 
@@ -144,6 +160,89 @@ const arbitraryWorld: fc.Arbitrary<WorldState> = fc
     outcome: values.outcome,
   }));
 
+/**
+ * Architecture rule 3, walked rather than asserted field by field: state is plain, immutable,
+ * serializable data, so every value inside a `WorldState` is a primitive, a plain object or an
+ * array of them - never a class instance, a `Map`, a `Set`, a `Date` or a function. The PLAN Inbox
+ * carried this as review-only until M3.8c, because the shallow list below it only ever looked at
+ * the top level of a world nobody had played.
+ *
+ * Reported as a list of paths rather than a boolean, so a failure names the field.
+ */
+type Offence = {
+  readonly path: string;
+  readonly reason: string;
+};
+
+const PLAIN_PROTOTYPES: readonly unknown[] = [Object.prototype, Array.prototype, null];
+
+/** A bound rather than a belief: a cyclic world would otherwise recurse until the stack went. */
+const MAX_STATE_DEPTH = 12;
+
+const offencesIn = (value: unknown, path: string, depth: number): readonly Offence[] => {
+  if (depth > MAX_STATE_DEPTH) {
+    return [{ path, reason: `nested deeper than ${MAX_STATE_DEPTH}` }];
+  }
+  if (typeof value === "function") {
+    return [{ path, reason: "a function" }];
+  }
+  if (value === undefined) {
+    return [{ path, reason: "undefined, which JSON drops" }];
+  }
+  if (value === null || typeof value !== "object") {
+    return [];
+  }
+  if (!PLAIN_PROTOTYPES.includes(Object.getPrototypeOf(value))) {
+    return [{ path, reason: `an instance of ${value.constructor.name}` }];
+  }
+  return Object.entries(value).flatMap(([key, member]) =>
+    offencesIn(member, `${path}.${key}`, depth + 1),
+  );
+};
+
+const offencesInWorld = (world: WorldState): readonly Offence[] => offencesIn(world, "world", 0);
+
+const graph = createGraphLogic();
+const generation = createGenerationLogic({
+  rng: rng,
+  topology: createTopologyLogic({ rng: rng, graph }),
+  river: createRiverLogic({ rng: rng, graph }),
+  districts: createDistrictLogic({ rng: rng, graph }),
+  validator: createValidatorLogic({ graph, minCut: createMinCutLogic({ graph }) }),
+});
+const game = createGameLogic({ rng: rng, generation });
+const turn = createTurnLogic({
+  intel: createIntelLogic({ rng: rng, graph }),
+  events: createEventLogic({ rng: rng }),
+  belief: createBeliefLogic({ graph }),
+  action: createActionLogic({ rng: rng }),
+  ai: createCriminalAiLogic({ rng: rng, graph }),
+  graph,
+});
+
+const SETUP: GameSetup = {
+  map: { columns: 8, rows: 6, exitCount: 3 },
+  maxTurns: MAX_TURNS,
+  difficulty: "standard",
+};
+
+/** A real hunt, played to whatever ends it, so the walk is over state the game actually built. */
+const huntPlayedOut = (seed: number): WorldState => {
+  const created = game.create({ setup: SETUP, seed, balance: BALANCE });
+  if (created.kind !== "game") {
+    throw new Error(`expected a game, got ${created.kind}`);
+  }
+  let world: SealedWorld = created.world;
+  for (let taken = 0; taken < MAX_TURNS; taken += 1) {
+    const result = turn.step({ world, actions: [{ kind: "true_briefing" }], balance: BALANCE });
+    if (result.kind !== "turn") {
+      return unseal(world);
+    }
+    world = result.world;
+  }
+  return unseal(world);
+};
+
 describe("makeWorldState", () => {
   it("starts with nothing having happened yet", () => {
     const world = sampleWorld();
@@ -169,23 +268,44 @@ describe("WorldState serialization", () => {
     expect(JSON.parse(JSON.stringify(world))).toEqual(world);
   });
 
-  test.prop([arbitraryWorld])("holds no functions, Maps or Sets", (world) => {
-    const values = [
-      world.config,
-      world.rng,
-      world.clock,
-      world.map,
-      world.hunter,
-      world.criminal,
-      ...world.reports,
-      ...world.events,
-      ...world.belief,
-      world.outcome,
-    ];
-    for (const value of values) {
-      expect(typeof value).toBe("object");
-      expect(value instanceof Map).toBe(false);
-      expect(value instanceof Set).toBe(false);
+  test.prop([arbitraryWorld])("holds nothing but plain data, however deep", (world) => {
+    expect(offencesInWorld(world)).toEqual([]);
+  });
+});
+
+describe("a world the game actually played (architecture rule 3)", () => {
+  const PLAYED_SEEDS: readonly number[] = [1, 7, 42, 512, 4242];
+
+  it("holds nothing but plain data from the first turn to the last", () => {
+    for (const seed of PLAYED_SEEDS) {
+      expect(offencesInWorld(huntPlayedOut(seed))).toEqual([]);
     }
+  });
+
+  it("round-trips through JSON once the hunt is over", () => {
+    const played = huntPlayedOut(SEED);
+
+    expect(JSON.parse(JSON.stringify(played))).toEqual(played);
+  });
+
+  /** The walk has to be able to fail, or the two tests above say nothing. */
+  it("names every kind of thing state may not hold", () => {
+    const sample = sampleWorld();
+    const planted: WorldState = {
+      ...sample,
+      map: { ...map, nodes: [...map.nodes, /exit/ as unknown as MapGraph["nodes"][number]] },
+      hunter: { ...sample.hunter, containments: new Set() as unknown as readonly Containment[] },
+      reports: new Map() as unknown as readonly Report[],
+      events: [{ kind: "nightfall", turn: () => TURN } as unknown as GameEvent],
+      belief: [{ nodeId: downtown, mass: undefined as unknown as number }],
+    };
+
+    expect(offencesInWorld(planted).map((offence) => offence.path)).toEqual([
+      "world.map.nodes.3",
+      "world.hunter.containments",
+      "world.reports",
+      "world.events.0.turn",
+      "world.belief.0.mass",
+    ]);
   });
 });

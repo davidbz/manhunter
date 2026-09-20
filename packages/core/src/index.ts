@@ -57,6 +57,8 @@ export {
 } from "./criminal";
 export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
 export { createDistrictLogic } from "./districts";
+export type { EndConditionKind } from "./endconditions";
+export { isHuntOver } from "./endconditions";
 export type {
   EventVisibility,
   GameEvent,
@@ -128,6 +130,21 @@ export { GAME_TITLE } from "./meta";
 export type { MinCutLogic, MinCutResult } from "./mincut";
 export { createMinCutLogic } from "./mincut";
 export type {
+  PlaybackDeps,
+  PlaybackLogic,
+  PlaybackRequest,
+  PlaybackResult,
+} from "./playback";
+export { createPlaybackLogic } from "./playback";
+export type {
+  Replay,
+  ReplayDecoding,
+  ReplayEncoding,
+  ReplayField,
+  ReplayRefusal,
+} from "./replay";
+export { decodeReplay, encodeReplay, makeReplay, REPLAY_VERSION, replayRefusalIn } from "./replay";
+export type {
   AccuracySettings,
   HiddenReportField,
   PrankSettings,
@@ -151,6 +168,14 @@ export type { RiverLogic, RiverRequest, RiverResult } from "./river";
 export { createRiverLogic } from "./river";
 export type { NonEmptyArray, Rng, RngDraw, RngState, Weighted } from "./rng";
 export { createRng } from "./rng";
+export type {
+  ScoreBreakdown,
+  ScoreComponent,
+  ScoreComponentKind,
+  ScoreRequest,
+  ScoringLogic,
+} from "./score";
+export { createScoringLogic } from "./score";
 export type { SealedWorld } from "./sealed";
 export { unseal } from "./sealed";
 export type { Clock, DaylightHours, Hour, TimeOfDay, Turn } from "./time";

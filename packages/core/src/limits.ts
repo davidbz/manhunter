@@ -66,4 +66,22 @@ export const LIMITS = {
    * it expects to be refused and for M4.3 to raise the allowance without touching this file.
    */
   maxQueuedActions: 32,
+  /**
+   * Characters a replay string may hold, in either direction (PLAN M3.9). The one size bound in
+   * this file: a replay arrives as text from a URL or a paste, and `decodeReplay` checks its
+   * length before it splits anything, so every allocation the parse makes is capped by this.
+   * Measured rather than guessed: 500 hunts on the default 8x6 grid at the default 24-turn
+   * deadline, with the three actions a turn can afford, encode to a mean of 131 characters
+   * (p50 125, max 466), and the same hunts on a 16x16 grid to a mean of 267 (max 497).
+   * The bound is set from the worst hunt that can legitimately exist instead: the deadline cap
+   * of `maxGameTurns` turns, on the largest grid `maxMapNodes` allows, with every turn's action
+   * points spent on the longest ids that grid can produce, is 7946 characters. 8192 clears that
+   * with room and is the same number `apps/web/src/limits.ts` already carries, which matters
+   * because the two bound the same string at two boundaries (PLAN M5.6b) and a share link that
+   * one accepts and the other refuses is a dead link.
+   * It is not a bound on queue length: 240 turns of 32 actions is 84506 characters and is
+   * refused, which is correct - `maxQueuedActions` is an order of magnitude over what a turn can
+   * spend, so such a hunt cannot be played, only fabricated.
+   */
+  maxReplayStringLength: 8_192,
 } as const;
