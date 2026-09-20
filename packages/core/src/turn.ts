@@ -23,6 +23,7 @@ import {
   trailAfter,
   withKnownRoadblock,
 } from "./criminal";
+import { isHuntOver, outcomeAfter } from "./endconditions";
 import type { GameEvent, GameEventKind } from "./events";
 import type { EventLogic, EventResult } from "./eventtable";
 import type { GraphLogic, Neighbor } from "./graph";
@@ -34,7 +35,7 @@ import type { ReportContent, ReportTruth } from "./report";
 import { type SealedWorld, seal, unseal } from "./sealed";
 import { makeClock, type Turn } from "./time";
 import { type HunterEvent, toHunterEvents, toHunterView } from "./view";
-import type { WorldState } from "./world";
+import type { GameOutcome, WorldState } from "./world";
 
 export type TurnRequest = {
   readonly world: SealedWorld;
@@ -69,11 +70,20 @@ export type TurnTaken = {
 };
 
 /**
- * A turn, or the one thing that stops a turn from being taken at all: a queue longer than
- * `LIMITS.maxQueuedActions`. That is a refusal of the request rather than a rejection inside it -
- * nothing about the world is looked at, and no part of the turn runs - which is why it is a
- * variant here and not another `PlanningRejection` (AGENTS.md section 5: oversized input is an
- * error result, never a truncation). Same shape as `GameResult`'s `deadline_too_long`.
+ * A turn, or one of the two things that stop a turn from being taken at all. Both are refusals of
+ * the request rather than rejections inside it - no part of the turn runs - which is why they are
+ * variants here and not more `PlanningRejection`s. Same shape as `GameResult`'s failures.
+ *
+ * `too_many_actions` is a queue longer than `LIMITS.maxQueuedActions`, refused without the world
+ * being looked at (AGENTS.md section 5: oversized input is an error result, never a truncation).
+ *
+ * `hunt_over` is a world whose `outcome` is already settled (PLAN M3.8b-1 handed this to M3.8c).
+ * The alternative - letting the phases run and having planning refuse the actions - would file
+ * reports, draw events and tick the clock on a hunt that had already ended, and would put the
+ * end-condition rule in two places. Refusing the whole call instead makes a finished world a fixed
+ * point: a replay (PLAN M3.9) that steps past the end gets the same final state as one that stops,
+ * however many times the caller asks. The outcome comes back because the caller may be a bot with
+ * no view, and `GameOutcome` is hunter-visible (`view.ts`), so it is safe to hand over.
  */
 export type TurnResult =
   | TurnTaken
@@ -81,6 +91,10 @@ export type TurnResult =
       readonly kind: "too_many_actions";
       readonly requestedActions: number;
       readonly maxActions: number;
+    }
+  | {
+      readonly kind: "hunt_over";
+      readonly outcome: GameOutcome;
     };
 
 export type TurnLogic = {
@@ -175,10 +189,8 @@ const spend = (
  * is ordinary play, and a hunter who queued four things is owed an answer about all four rather
  * than about the first one that failed.
  *
- * Whether a finished hunt still accepts a queue is **PLAN M3.8c's**, not this phase's: the
- * question is really whether `step` runs at all once `outcome` is set, and a planning phase that
- * refused while intel still filed reports and the clock still ticked would be half an answer.
- * M3.8c is the task that sets an outcome, so it is the task that can test one.
+ * A finished hunt never reaches this phase. PLAN M3.8b-1 left the question here and M3.8c
+ * answered it at the top of `step`, where refusing costs no half-played turn.
  */
 const planningPhase = (
   deps: TurnDeps,
@@ -287,9 +299,9 @@ const resolvedCriminal = (
  * Capture is not settled here. DESIGN.md's win is both sides standing on one node, and in the MVP
  * the hunter stands on none: a roadblock is an edge, and no MVP action puts a unit anywhere (PLAN
  * M6 owns the ones that do). So the co-location has one side missing, and writing the test for it
- * would be writing a branch nothing can reach. What this phase owes PLAN M3.8c is the criminal's
- * true final position, which the world now carries turn by turn; the rule that reads it is
- * M3.8c's, and the Inbox carries the gap.
+ * would be writing a branch nothing can reach. What this phase owes is the criminal's true final
+ * position, which the world carries turn by turn; the rule that reads it is `endconditions.ts`'s,
+ * and the Inbox carries the gap where capture would be.
  */
 const resolutionPhase = (deps: TurnDeps, world: WorldState, balance: Balance): Resolution => {
   const decision = deps.ai.choose({
@@ -429,27 +441,41 @@ const nextCriminal = (
 });
 
 /**
- * Consequences: the meters and the clock. End conditions are checked here too from PLAN M3.8c;
- * nothing in this task can produce a finished world, so the outcome is left as it was found.
+ * Consequences: the meters, the clock, and then the end conditions, in DESIGN.md's own order
+ * ("meters update, the clock advances, end conditions are checked").
+ *
+ * The order is load-bearing twice. The conditions read the meters this turn moved, so an exit
+ * reached in resolution and a bystander hurt in the events phase are both judged on the turn they
+ * happened. And they are asked after the clock has moved, so `outcome.turn` is the number of turns
+ * the hunt lasted rather than the index of the last one.
+ *
+ * Which conditions exist is `endconditions.ts`'s business, not this phase's (architecture rule 6).
  */
 const consequencesPhase = (
   deps: TurnDeps,
   resolved: Resolution,
   balance: Balance,
   fired: readonly GameEvent[],
-): WorldState => ({
-  ...resolved.world,
-  clock: makeClock(resolved.world.config.startHour, resolved.world.clock.turn + ONE_TURN),
-  hunter: nextHunter(resolved.world, balance, fired),
-  criminal: nextCriminal(resolved.world, balance, resolved.action),
-  belief: nextBelief(deps, resolved.world, balance),
-});
+): WorldState => {
+  const settled: WorldState = {
+    ...resolved.world,
+    clock: makeClock(resolved.world.config.startHour, resolved.world.clock.turn + ONE_TURN),
+    hunter: nextHunter(resolved.world, balance, fired),
+    criminal: nextCriminal(resolved.world, balance, resolved.action),
+    belief: nextBelief(deps, resolved.world, balance),
+  };
+
+  return { ...settled, outcome: outcomeAfter(settled, balance.endConditions) };
+};
 
 /**
- * The queue is bounded before the turn begins, not when planning reaches it. It is caller-supplied
- * input (AGENTS.md section 5) and the check costs a length, so refusing it after intel has filed
- * reports and the events table has drawn would mean an error result naming a turn that had
- * already half happened.
+ * Both refusals are settled before the turn begins, not when a phase reaches them. They are
+ * caller-supplied input (AGENTS.md section 5) and cost a length and a field to check, so refusing
+ * after intel has filed reports and the events table has drawn would mean an error result naming a
+ * turn that had already half happened.
+ *
+ * The queue is checked first: it is a bound on the request itself, and a request that breaks it is
+ * malformed whether or not the world it names is still running.
  */
 export const createTurnLogic = (deps: TurnDeps): TurnLogic => ({
   step: ({ world, actions, balance }) => {
@@ -460,7 +486,11 @@ export const createTurnLogic = (deps: TurnDeps): TurnLogic => ({
         maxActions: LIMITS.maxQueuedActions,
       };
     }
-    const filed = intelPhase(deps, unseal(world), balance);
+    const opening = unseal(world);
+    if (isHuntOver(opening.outcome)) {
+      return { kind: "hunt_over", outcome: opening.outcome };
+    }
+    const filed = intelPhase(deps, opening, balance);
     const fired = eventsPhase(deps, filed, balance);
     const planned = planningPhase(deps, fired.world, actions, balance);
     const resolved = resolutionPhase(deps, planned.world, balance);
