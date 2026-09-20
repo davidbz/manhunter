@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BALANCE } from "./balance";
+import { LIMITS } from "./limits";
 
 /** Jitter is a fraction of `nodeSpacing`; half a cell is where a node would leave its own. */
 const HALF_A_CELL = 0.5;
@@ -154,6 +155,16 @@ describe("reports", () => {
     const { minDelayTurns, maxDelayTurns } = BALANCE.actions.pullCctv;
     expect(minDelayTurns).toBeGreaterThan(0);
     expect(maxDelayTurns).toBeGreaterThanOrEqual(minDelayTurns);
+  });
+
+  /**
+   * The camera can only show what the criminal's trail still remembers (PLAN M3.8b-2), so a
+   * lookback past the cap would quietly return empty footage instead of failing.
+   */
+  it("asks for no more footage than the criminal's trail keeps", () => {
+    const { lookbackTurns } = BALANCE.actions.pullCctv;
+    expect(lookbackTurns).toBeGreaterThan(0);
+    expect(lookbackTurns).toBeLessThanOrEqual(LIMITS.maxCriminalTrail);
   });
 
   it("caps pranks below certainty and lets media raise them", () => {

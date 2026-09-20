@@ -48,4 +48,22 @@ export const LIMITS = {
   maxGameTurns: 240,
   /** Candidate actions the criminal AI may enumerate in one turn (PLAN M3.5). */
   maxAiCandidates: 256,
+  /**
+   * Turns of the criminal's own position `CriminalState.trail` keeps (PLAN M3.8b-2). The trail
+   * exists so a camera can show footage of the past, so the bound has to cover the deepest
+   * `balance.actions.pullCctv.lookbackTurns` a sweep (PLAN M4.3) would set - `balance.test.ts`
+   * asserts the current one fits. Four times it, because the trail is state every world carries
+   * into a replay string (PLAN M3.9) and a hunt-long history would be paid for on every turn of
+   * every game to answer a question two turns deep.
+   */
+  maxCriminalTrail: 8,
+  /**
+   * Hunter actions one turn's queue may hold (PLAN M3.8b-1). The queue is handed to `step` by the
+   * caller and reaches `core` from a replay string (PLAN M3.9), so like the grid and the deadline
+   * it is untrusted input: a longer queue is refused before the turn runs, never truncated.
+   * `balance.hunter.actionPointsPerTurn` is 3 and no action costs less than a point, so three is
+   * what a turn can actually spend; 32 leaves an order of magnitude for a UI that queues actions
+   * it expects to be refused and for M4.3 to raise the allowance without touching this file.
+   */
+  maxQueuedActions: 32,
 } as const;

@@ -47,7 +47,14 @@ export type {
   CriminalState,
   HeatBounds,
 } from "./criminal";
-export { EMPTY_CRIMINAL_KNOWLEDGE, heatFactorOf, makeCriminalState } from "./criminal";
+export {
+  EMPTY_CRIMINAL_KNOWLEDGE,
+  heatFactorOf,
+  makeCriminalState,
+  recentNodeIds,
+  trailAfter,
+  withKnownRoadblock,
+} from "./criminal";
 export type { DistrictLogic, DistrictRequest, DistrictResult } from "./districts";
 export { createDistrictLogic } from "./districts";
 export type {
@@ -158,6 +165,14 @@ export type {
 } from "./topology";
 export { createTopologyLogic } from "./topology";
 export type {
+  PlanningRejection,
+  TurnLogic,
+  TurnRequest,
+  TurnResult,
+  TurnTaken,
+} from "./turn";
+export { createTurnLogic } from "./turn";
+export type {
   ValidationRequest,
   ValidationResult,
   ValidationRule,
@@ -172,6 +187,6 @@ export type {
   ReportArrivedEvent,
   RevealFrame,
 } from "./view";
-export { toHunterView } from "./view";
+export { toHunterEvents, toHunterView } from "./view";
 export type { GameOutcome, WorldState } from "./world";
 export { IN_PROGRESS, makeWorldState } from "./world";

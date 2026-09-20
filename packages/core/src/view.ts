@@ -88,6 +88,14 @@ const isHidden = (event: GameEvent): event is HiddenEvent => isHiddenEventKind(e
 const redactEvent = (event: GameEvent): HunterEvent =>
   isHidden(event) ? { kind: "report_arrived", turn: event.turn, reportId: event.reportId } : event;
 
+/**
+ * The same redaction over a list, for the turn loop: `step` returns what happened this turn beside
+ * the world it happened to, and that list reaches the UI without passing through `toHunterView`
+ * (PLAN M3.8a).
+ */
+export const toHunterEvents = (events: readonly GameEvent[]): readonly HunterEvent[] =>
+  events.map((event) => redactEvent(event));
+
 export const toHunterView = (world: SealedWorld): HunterView => {
   const state = unseal(world);
   const now = state.clock.turn;
@@ -99,7 +107,7 @@ export const toHunterView = (world: SealedWorld): HunterView => {
     reports: state.reports
       .filter((report) => report.receivedAtTurn <= now)
       .map((report) => redactReport(report)),
-    events: state.events.map((event) => redactEvent(event)),
+    events: toHunterEvents(state.events),
     belief: state.belief,
     casualties: state.casualties,
     turnsRemaining: Math.max(state.config.maxTurns - now, NO_TURNS_REMAINING),

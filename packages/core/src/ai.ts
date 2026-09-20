@@ -25,7 +25,7 @@ import { districtPropertiesAt, witnessDensityAt } from "./exposure";
 import type { GraphLogic, Traversal } from "./graph";
 import type { NodeId } from "./ids";
 import { LIMITS } from "./limits";
-import type { MapGraph } from "./map";
+import type { MapGraph, TravelMode } from "./map";
 import type { Rng, RngDraw, RngState } from "./rng";
 import type { Clock } from "./time";
 import type { WorldState } from "./world";
@@ -103,15 +103,23 @@ const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(Math.max(value, minimum), maximum);
 
 /**
- * The city as the criminal can cross it: its own travel mode, with the roadblocks it knows about
- * taken out of the map. Every distance below is measured on this and the neighbours it may move
- * to are drawn from it, so "never moves through a known roadblock" is a property of the graph the
- * AI searches rather than a check it could forget.
+ * The city as the criminal can cross it: the travel mode asked for, with the roadblocks it knows
+ * about taken out of the map. Every distance below is measured on this and the neighbours it may
+ * move to are drawn from it, so "never moves through a known roadblock" is a property of the
+ * graph the AI searches rather than a check it could forget.
+ *
+ * Exported because `turn.ts` walks the same graph to find which edge a chosen move takes (PLAN
+ * M3.8b-2): the route the hunt resolves has to be the route the criminal planned, and two copies
+ * of this shape is how the two would drift apart.
  */
-const traversalOf = (balance: Balance, situation: CriminalSituation): Traversal => ({
+export const criminalTraversalOf = (
+  balance: Balance,
+  situation: CriminalSituation,
+  mode: TravelMode,
+): Traversal => ({
   graph: situation.map,
   balance,
-  mode: situation.criminal.travelMode,
+  mode,
   blockedEdgeIds: new Set(situation.criminal.knowledge.knownRoadblockEdgeIds),
 });
 
@@ -273,7 +281,7 @@ export const createCriminalAiLogic = (deps: AiDeps): CriminalAiLogic => ({
       situation,
       balance,
       weights,
-      traversal: traversalOf(balance, situation),
+      traversal: criminalTraversalOf(balance, situation, situation.criminal.travelMode),
       exitNodeIds: situation.map.exits.map((exit) => exit.nodeId),
       heatFactor: heatFactorOf(balance.criminal, situation.criminal.heat),
     };

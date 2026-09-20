@@ -10,7 +10,7 @@ import type { NodeId } from "./ids";
 import { makeEdgeId, makeNodeId } from "./ids";
 import type { MapGraph } from "./map";
 import { makeEdge, makeExit, makeNode } from "./map";
-import type { Report } from "./report";
+import { type Report, UNKNOWN_TRAVEL_MODE } from "./report";
 import { createRng } from "./rng";
 import { makeClock } from "./time";
 import type { WorldState } from "./world";
@@ -92,6 +92,7 @@ type WorldOptions = {
   readonly seed?: number;
   readonly startHour?: number;
   readonly criminalNodeId?: NodeId;
+  readonly trail?: readonly NodeId[];
 };
 
 const worldAt = (options: WorldOptions = {}): WorldState =>
@@ -101,15 +102,18 @@ const worldAt = (options: WorldOptions = {}): WorldState =>
     clock: makeClock(options.startHour ?? START_HOUR, TURN),
     map,
     hunter: options.hunter ?? hunterWith({}),
-    criminal: makeCriminalState({
-      nodeId: options.criminalNodeId ?? riverside,
-      travelMode: "foot",
-      profile: "amateur",
-      stamina: START_STAMINA,
-      heat: 0,
-      cash: START_CASH,
-      desperation: 0,
-    }),
+    criminal: {
+      ...makeCriminalState({
+        nodeId: options.criminalNodeId ?? riverside,
+        travelMode: "foot",
+        profile: "amateur",
+        stamina: START_STAMINA,
+        heat: 0,
+        cash: START_CASH,
+        desperation: 0,
+      }),
+      trail: options.trail ?? [],
+    },
   });
 
 const worldWith = (hunter: HunterState): WorldState => worldAt({ hunter });
@@ -417,6 +421,16 @@ describe("canvass", () => {
     expect(report.content).toEqual({ kind: "sighting", nodeId: downtown, travelMode: "foot" });
   });
 
+  /** Witnesses are asked what they can see now, whatever the cameras would still hold. */
+  it("finds nobody where the criminal was a turn ago", () => {
+    const left = worldAt({ hunter: fullTrust, criminalNodeId: riverside, trail: [downtown] });
+    const report = onlyReport(
+      applied({ world: left, action: canvassDowntown, balance: ALWAYS_HEARD }),
+    );
+
+    expect(report.content).toEqual({ kind: "no_sighting", nodeId: downtown });
+  });
+
   /** Negative evidence is the point, not a leftover: M3.6b's heatmap prunes with it. */
   it("files where the criminal was not, when nobody saw anything", () => {
     const report = onlyReport(
@@ -554,6 +568,42 @@ describe("pull_cctv", () => {
 
     expect(accuracyAt(BALANCE.hunter.trustMin)).toBe(REPORTS.cctvAccuracy);
     expect(accuracyAt(BALANCE.hunter.trustMax)).toBe(REPORTS.cctvAccuracy);
+  });
+
+  /**
+   * DESIGN.md "Actions": the camera is the one source that is about the past. The trail the
+   * criminal leaves (PLAN M3.8b-2) is what `lookbackTurns` reads, and it records where, not how,
+   * so footage of a node the criminal has left cannot say what it left on.
+   */
+  it("finds the criminal in footage of where it was a turn ago", () => {
+    const left = worldAt({ criminalNodeId: riverside, trail: [downtown] });
+    const report = onlyReport(
+      applied({ world: left, action: pullDowntown, balance: ALWAYS_FILMED }),
+    );
+
+    expect(report.content).toEqual({
+      kind: "sighting",
+      nodeId: downtown,
+      travelMode: UNKNOWN_TRAVEL_MODE,
+    });
+  });
+
+  it("names the travel mode only where the criminal still is", () => {
+    const here = worldAt({ criminalNodeId: downtown, trail: [downtown] });
+    const report = onlyReport(
+      applied({ world: here, action: pullDowntown, balance: ALWAYS_FILMED }),
+    );
+
+    expect(report.content).toEqual({ kind: "sighting", nodeId: downtown, travelMode: "foot" });
+  });
+
+  it("sees nothing past the end of the tape", () => {
+    const longAgo = worldAt({ criminalNodeId: riverside, trail: [riverside, downtown] });
+    const report = onlyReport(
+      applied({ world: longAgo, action: pullDowntown, balance: ALWAYS_FILMED }),
+    );
+
+    expect(report.content).toEqual({ kind: "no_sighting", nodeId: downtown });
   });
 
   /** A park has no cameras in shipped balance, and the hunter can read that before paying. */
