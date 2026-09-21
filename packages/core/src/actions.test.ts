@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActionLogic, targetKindOf } from "./actions";
+import { actionCostOf, createActionLogic, targetKindOf } from "./actions";
 import type { Balance, DistrictProperties } from "./balance";
 import { BALANCE } from "./balance";
 import type { GameConfig } from "./config";
@@ -145,6 +145,31 @@ describe("targetKindOf", () => {
       "node",
       "global",
     ]);
+  });
+});
+
+describe("actionCostOf", () => {
+  it("prices every action off the balance it is handed", () => {
+    expect(everyKind.map((action) => actionCostOf(action.kind, BALANCE))).toEqual([
+      { actionPoints: ROADBLOCK.actionPointCost, budget: ROADBLOCK.budgetCost },
+      { actionPoints: CANVASS.actionPointCost, budget: CANVASS.budgetCost },
+      {
+        actionPoints: BALANCE.actions.pullCctv.actionPointCost,
+        budget: BALANCE.actions.pullCctv.budgetCost,
+      },
+      {
+        actionPoints: BALANCE.actions.trueBriefing.actionPointCost,
+        budget: BALANCE.actions.trueBriefing.budgetCost,
+      },
+    ]);
+  });
+
+  it("agrees with the cost validate quotes for the same action", () => {
+    const validation = actions.validate({ world, action: blockRoad, balance: BALANCE });
+
+    expect(validation.kind === "allowed" ? validation.cost : null).toEqual(
+      actionCostOf(blockRoad.kind, BALANCE),
+    );
   });
 });
 

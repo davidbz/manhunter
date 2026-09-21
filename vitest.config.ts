@@ -34,7 +34,8 @@ export default defineConfig({
         test: {
           name: "web",
           root: "apps/web",
-          environment: "node",
+          /** The one project with a DOM (PLAN M5.2). Playwright still owns the e2e flows. */
+          environment: "jsdom",
           include: TEST_FILES,
           exclude: SLOW_FILES,
         },

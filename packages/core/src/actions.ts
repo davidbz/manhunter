@@ -390,6 +390,16 @@ const definitionOf = (action: HunterAction): ActionDefinition<HunterAction> =>
 export const targetKindOf = (kind: HunterActionKind): ActionTargetKind => ACTION_TABLE[kind].target;
 
 /**
+ * What an action costs, read off the same table the framework charges from. `validate` answers the
+ * same question and better, but it needs a `WorldState`, so a caller that holds only a `HunterView`
+ * cannot ask it: PLAN M4.1's bots plan from a view, and PLAN M5.5 has to grey out a button before
+ * the target is chosen. One accessor rather than a second copy of which balance field each action
+ * bills to, which is the copy that would drift.
+ */
+export const actionCostOf = (kind: HunterActionKind, balance: Balance): ActionCost =>
+  ACTION_TABLE[kind].cost(balance);
+
+/**
  * The action's own rules are checked before its price. A malformed action is wrong however rich
  * the hunter is, and the UI wants to refuse an illegal target without the budget having a say.
  */
