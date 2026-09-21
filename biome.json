@@ -177,6 +177,48 @@
       }
     },
     {
+      "includes": ["packages/sim/src/bots/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@manhunter/web", "react", "react-*", "zustand"],
+                    "message": "packages/sim depends on core only; web is a sibling leaf (architecture rule 5)."
+                  }
+                ],
+                "paths": {
+                  "@manhunter/core": {
+                    "importNames": [
+                      "WorldState",
+                      "CriminalState",
+                      "CriminalKnowledge",
+                      "CriminalSituation",
+                      "toCriminalSituation",
+                      "Report",
+                      "GameConfig",
+                      "unseal",
+                      "makeWorldState",
+                      "makeCriminalState",
+                      "makeReport",
+                      "EMPTY_CRIMINAL_KNOWLEDGE",
+                      "SealedWorld",
+                      "RevealFrame",
+                      "createPlaybackLogic"
+                    ],
+                    "message": "A scripted bot plans from a HunterView alone (PLAN M4.1). packages/sim at large may unseal a world; this directory may not (architecture rule 4)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.config.ts", "**/*.config.js"],
       "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
     },

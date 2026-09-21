@@ -23,12 +23,18 @@ const MAX_BIOME_OUTPUT_BYTES = 8 * 1024 * 1024;
 const CORE_DIR = "packages/core/src";
 const SIM_DIR = "packages/sim/src";
 const WEB_DIR = "apps/web/src";
+/** The narrower rule inside `sim`: PLAN M4.1's bots may not reach what the rest of `sim` may. */
+const BOTS_DIR = `${SIM_DIR}/bots`;
+
+const DEFAULT_EXTENSION = ".ts";
 
 type Fixture = {
   readonly id: string;
   readonly rule: string;
   readonly dir: string;
   readonly source: string;
+  /** `.tsx` for the fixtures that prove an override reaches components, not just modules. */
+  readonly extension?: string;
 };
 
 type ExpectedDiagnostic = {
@@ -91,6 +97,18 @@ const VIOLATIONS: readonly Violation[] = [
     dir: WEB_DIR,
     source:
       'import type { WorldState } from "@manhunter/core";\n\nexport const echo = (w: WorldState): WorldState => w;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "only ever receives HunterView",
+    },
+  },
+  {
+    id: "web_component_world_state",
+    rule: "rule 4 (hidden information): a web component importing WorldState",
+    dir: WEB_DIR,
+    extension: ".tsx",
+    source:
+      'import type { WorldState } from "@manhunter/core";\n\nexport const Casualties = ({ world }: { readonly world: WorldState }) => <p>{world.casualties}</p>;\n',
     expected: {
       category: "lint/style/noRestrictedImports",
       messageIncludes: "only ever receives HunterView",
@@ -162,6 +180,28 @@ const VIOLATIONS: readonly Violation[] = [
     },
   },
   {
+    id: "sim_bot_world_state",
+    rule: "rule 4 (hidden information): a scripted bot reaching past HunterView",
+    dir: BOTS_DIR,
+    source:
+      'import type { WorldState } from "@manhunter/core";\n\nexport const where = (w: WorldState): unknown => w.criminal;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "plans from a HunterView alone",
+    },
+  },
+  {
+    id: "sim_bot_unseal",
+    rule: "rule 4 (hidden information): a scripted bot unsealing a world the rest of sim may unseal",
+    dir: BOTS_DIR,
+    source:
+      'import { type SealedWorld, unseal } from "@manhunter/core";\n\nexport const peek = (w: SealedWorld): number => unseal(w).casualties;\n',
+    expected: {
+      category: "lint/style/noRestrictedImports",
+      messageIncludes: "plans from a HunterView alone",
+    },
+  },
+  {
     id: "sim_class",
     rule: "no classes (AGENTS.md code style), outside core too",
     dir: SIM_DIR,
@@ -201,7 +241,8 @@ const CLEAN_FIXTURE: Fixture = {
 
 const ALL_FIXTURES: readonly Fixture[] = [...VIOLATIONS, CLEAN_FIXTURE];
 
-const fixturePath = (fixture: Fixture): string => `${fixture.dir}/__arch_${fixture.id}__.ts`;
+const fixturePath = (fixture: Fixture): string =>
+  `${fixture.dir}/__arch_${fixture.id}__${fixture.extension ?? DEFAULT_EXTENSION}`;
 
 type Diagnostic = { readonly path: string; readonly category: string; readonly message: string };
 

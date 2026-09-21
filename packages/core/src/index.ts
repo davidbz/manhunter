@@ -7,7 +7,7 @@ export type {
   ActionTargetKind,
   ActionValidation,
 } from "./actions";
-export { createActionLogic, targetKindOf } from "./actions";
+export { actionCostOf, createActionLogic, targetKindOf } from "./actions";
 export type {
   CriminalAiLogic,
   CriminalAiRequest,
