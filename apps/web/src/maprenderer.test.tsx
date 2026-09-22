@@ -40,6 +40,7 @@ import {
   MAP_TEST_ID,
   MapRenderer,
   type MapSelection,
+  ROAD_GLOW_FILTER_ID,
 } from "./maprenderer";
 
 /**
@@ -172,6 +173,20 @@ describe("the map renderer", () => {
 
     expect(withAttribute(MAP_EDGE_TEST_ID, "data-edgekind", "footpath")).toHaveLength(1);
     expect(withAttribute(MAP_EDGE_TEST_ID, "data-edgekind", "bridge")).toHaveLength(1);
+  });
+
+  it("glows every edge line with the shared road-glow filter (PLAN M5.7)", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+
+    const filterElement = container?.querySelector(`filter#${ROAD_GLOW_FILTER_ID}`);
+    expect(filterElement).not.toBeNull();
+    expect(filterElement?.querySelector("feGaussianBlur")).not.toBeNull();
+
+    const lines = Array.from(container?.querySelectorAll("line") ?? []);
+    expect(lines.length).toBe(EDGES.length);
+    for (const line of lines) {
+      expect(line.getAttribute("filter")).toBe(`url(#${ROAD_GLOW_FILTER_ID})`);
+    }
   });
 
   it("names the exits and the incident node, so the two are not just circles", async () => {

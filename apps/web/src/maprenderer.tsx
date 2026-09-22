@@ -20,9 +20,14 @@
  * button, `role="button"` on a `<g>` is what Biome's `useSemanticElements` refuses, and an option
  * is the role that can carry `aria-selected`, which is the state this map actually has.
  *
- * Colours and measurements are one table, `DEFAULT_MAP_THEME`, passed in rather than captured
- * (the `SvgTheme` precedent in `packages/sim/src/svg.ts`). PLAN M5.7 lifts the palette into
- * `theme.ts`; until then this is the one place in the renderer a colour appears.
+ * Colours and measurements are one table, `MapTheme`, passed in rather than captured (the
+ * `SvgTheme` precedent in `packages/sim/src/svg.ts`). The values are `theme.ts`'s `MAP_THEME`
+ * (PLAN M5.7); this file keeps only the type, which is the renderer's own contract.
+ *
+ * **The glow filter is PLAN M5.7's "thin glowing roads".** `<defs>` declares one
+ * `feGaussianBlur` + `feMerge` filter and every edge line references it: blurring the line's own
+ * `SourceGraphic` and merging the crisp original back on top glows each edge kind in its own
+ * stroke colour, with no second colour token to name for the glow itself.
  */
 
 import {
@@ -41,6 +46,7 @@ import {
 } from "@manhunter/core";
 import type { KeyboardEvent, ReactNode } from "react";
 import { positionIndexOf } from "./mapnodes";
+import { MAP_THEME } from "./theme";
 
 /** What the player has picked on the map. PLAN M5.5 turns one of these into an action target. */
 export type MapSelection =
@@ -74,43 +80,14 @@ export type MapTheme = {
   readonly selectionGap: number;
   readonly blockedStroke: string;
   readonly blockedRadius: number;
+  /** Gaussian blur, in SVG user units, on the road-edge glow filter (PLAN M5.7). */
+  readonly glowBlur: number;
   readonly edges: Readonly<Record<EdgeKind, MapEdgeStyle>>;
   readonly districts: Readonly<Record<DistrictType, string>>;
 };
 
-/** The dispatch palette of DESIGN.md "Visual direction". PLAN M5.7 lifts it into `theme.ts`. */
-export const DEFAULT_MAP_THEME: MapTheme = {
-  padding: 24,
-  river: "#1d4e6b",
-  riverWidth: 6,
-  nodeRadius: 6,
-  incidentRadius: 9,
-  nodeStroke: "#0b0f14",
-  exitStroke: "#f2b134",
-  incidentStroke: "#e8483f",
-  markerWidth: 2.5,
-  selectionStroke: "#e8f1ff",
-  selectionWidth: 2,
-  selectionGap: 4,
-  blockedStroke: "#e8483f",
-  blockedRadius: 3.5,
-  edges: {
-    road: { stroke: "#4c6378", width: 2, dash: null },
-    footpath: { stroke: "#3c5a44", width: 1.5, dash: "3 3" },
-    rail: { stroke: "#7a6ea8", width: 2, dash: "8 4" },
-    tunnel: { stroke: "#6b5a4a", width: 2, dash: "1 4" },
-    bridge: { stroke: "#d9e2ec", width: 3, dash: null },
-  },
-  districts: {
-    downtown: "#5fb0d9",
-    residential: "#7fbf7f",
-    suburb: "#b5c46a",
-    industrial: "#b58a5a",
-    park: "#4f9a6a",
-    transit_hub: "#c07fc0",
-    exit: "#f2b134",
-  },
-};
+/** The dispatch palette of DESIGN.md "Visual direction", read from `theme.ts` (PLAN M5.7). */
+export const DEFAULT_MAP_THEME: MapTheme = MAP_THEME;
 
 export type MapRendererProps = {
   readonly view: HunterView;
@@ -136,6 +113,14 @@ const ROUND_CAP = "round";
 const LABEL_SEPARATOR = " - ";
 const INCIDENT_LABEL = "incident";
 const EXIT_LABEL = "exit";
+
+/** id of the `<filter>` every road edge's glow references (PLAN M5.7). Exported for tests. */
+export const ROAD_GLOW_FILTER_ID = "road-glow";
+const ROAD_GLOW_URL = `url(#${ROAD_GLOW_FILTER_ID})`;
+const ROAD_GLOW_REGION = "-75%";
+const ROAD_GLOW_REGION_SPAN = "250%";
+const SOURCE_GRAPHIC = "SourceGraphic";
+const ROAD_GLOW_BLUR_RESULT = "blurred";
 
 /** Keys that pick the focused node or edge, so the map is reachable without a pointer. */
 const SELECT_KEYS: readonly string[] = ["Enter", " "];
@@ -270,6 +255,7 @@ const MapEdgeLine = ({ placed, blocked, selected, theme, onSelect }: MapEdgeLine
         stroke={selected ? theme.selectionStroke : style.stroke}
         strokeWidth={style.width}
         strokeDasharray={style.dash ?? undefined}
+        filter={ROAD_GLOW_URL}
       />
       {blocked ? (
         <circle
@@ -341,6 +327,28 @@ const MapNodeMarker = ({
   );
 };
 
+/**
+ * Blurs the edge line's own rendering and merges the crisp original back on top, so a road glows
+ * in its own stroke colour rather than a second, separately-tuned glow colour (PLAN M5.7).
+ */
+const RoadGlowFilter = ({ blur }: { readonly blur: number }) => (
+  <defs>
+    <filter
+      id={ROAD_GLOW_FILTER_ID}
+      x={ROAD_GLOW_REGION}
+      y={ROAD_GLOW_REGION}
+      width={ROAD_GLOW_REGION_SPAN}
+      height={ROAD_GLOW_REGION_SPAN}
+    >
+      <feGaussianBlur in={SOURCE_GRAPHIC} stdDeviation={blur} result={ROAD_GLOW_BLUR_RESULT} />
+      <feMerge>
+        <feMergeNode in={ROAD_GLOW_BLUR_RESULT} />
+        <feMergeNode in={SOURCE_GRAPHIC} />
+      </feMerge>
+    </filter>
+  </defs>
+);
+
 const MapRiver = ({ river, theme }: { readonly river: River | null; readonly theme: MapTheme }) => {
   if (river === null || river.points.length < RIVER_MIN_POINTS) return null;
 
@@ -380,6 +388,7 @@ export const MapRenderer = ({
       data-testid={MAP_TEST_ID}
       viewBox={viewBoxOf(boundsOf(drawn, theme.padding))}
     >
+      <RoadGlowFilter blur={theme.glowBlur} />
       <MapRiver river={map.river} theme={theme} />
       <g data-testid={MAP_OVERLAY_TEST_ID} style={{ pointerEvents: NO_POINTER_EVENTS }}>
         {overlay}

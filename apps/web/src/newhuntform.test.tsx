@@ -115,6 +115,31 @@ describe("the new hunt form", () => {
     expect(store.getState().refusal).toBeNull();
   });
 
+  it("starts a hunt from a form submit, not only a click - the Enter-key path (PLAN M5.7)", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+
+    const form = find(NEW_HUNT_TEST_ID) as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(store.getState().hunt).not.toBeNull();
+  });
+
+  it("does not start a hunt on submit while the seed is refused", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+
+    await type(OVER_LIMIT);
+    const form = find(NEW_HUNT_TEST_ID) as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(store.getState().hunt).toBeNull();
+  });
+
   it("says why an over-long seed was refused, and will not start on it", async () => {
     const store = createGameStore(TEST_GAME_DEPS, BALANCE);
     await render(store);

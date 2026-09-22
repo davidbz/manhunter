@@ -12,10 +12,17 @@
  * prank (PLAN "GameEvent leaks which report is a prank"). Ordering, grouping and styling therefore
  * read only `receivedAtTurn`, `observedAtTurn`, `source` and `content` - the four fields the
  * player is meant to reason from. Telling a prank from a sighting stays the player's job.
+ *
+ * DESIGN.md's "monospace report feed": `theme.ts`'s `TYPE_SCALE.fontFamily` is set on the whole
+ * document at the composition root (PLAN M5.7's `main.tsx` note), so the feed inherits it like
+ * everything else; it is restated here so the feed is still monospace if it is ever rendered
+ * somewhere that font is not already the default, and the timestamps use the smaller size in the
+ * same table to read as a log rather than as body text.
  */
 
 import type { HunterReport, NodeId, ReportContent, ReportSource, Turn } from "@manhunter/core";
 import { LIMITS } from "./limits";
+import { TYPE_SCALE } from "./theme";
 
 export type ReportFeedProps = {
   readonly reports: readonly HunterReport[];
@@ -146,9 +153,11 @@ const ReportEntry = ({
   >
     <span
       data-testid={REPORT_OBSERVED_TEST_ID}
+      style={{ fontSize: TYPE_SCALE.fontSizeSmall }}
     >{`${OBSERVED_PREFIX}${report.observedAtTurn}`}</span>
     <span
       data-testid={REPORT_RECEIVED_TEST_ID}
+      style={{ fontSize: TYPE_SCALE.fontSizeSmall }}
     >{`${RECEIVED_PREFIX}${report.receivedAtTurn}`}</span>
     <span>{REPORT_SOURCE_LABELS[report.source]}</span>
     <span data-testid={REPORT_CONTENT_TEST_ID}>{contentTextOf(contentLineOf(report.content))}</span>
@@ -163,7 +172,11 @@ export const ReportFeed = ({
   const page = reportPageOf(reports, maxEntries);
 
   return (
-    <section aria-label={FEED_LABEL} data-testid={REPORT_FEED_TEST_ID}>
+    <section
+      aria-label={FEED_LABEL}
+      data-testid={REPORT_FEED_TEST_ID}
+      style={{ fontFamily: TYPE_SCALE.fontFamily }}
+    >
       {page.entries.length === NONE ? (
         <p data-testid={REPORT_FEED_EMPTY_TEST_ID}>{EMPTY_TEXT}</p>
       ) : (

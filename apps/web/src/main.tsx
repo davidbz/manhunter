@@ -30,8 +30,12 @@ import { App } from "./App";
 import { createGameStore } from "./gamestore";
 import { replayParamOf } from "./sharelinkurl";
 import { GameStoreProvider } from "./storecontext";
+import { PALETTE, TYPE_SCALE } from "./theme";
 
 const MOUNT_ELEMENT_ID = "root";
+const NO_MARGIN = "0";
+const FULL_VIEWPORT_HEIGHT = "100vh";
+const DARK_COLOR_SCHEME = "dark";
 
 const rng = createRng();
 const graph = createGraphLogic();
@@ -76,6 +80,24 @@ const mount = document.getElementById(MOUNT_ELEMENT_ID);
 if (!mount) {
   throw new Error(`index.html is missing the #${MOUNT_ELEMENT_ID} mount point`);
 }
+
+/**
+ * DESIGN.md's "Visual direction" ("dark background... monospace report feed") applied once, here,
+ * rather than a stylesheet (PLAN M5.7): `apps/web` has no CSS file, and one holding these same
+ * values would be a second copy of `theme.ts`'s palette the colour-literal test could not see.
+ * `document.body` is outside `#root`, so a React component can never reach it; the composition
+ * root already touches the DOM once for `MOUNT_ELEMENT_ID`, and this is the same kind of one-time
+ * page chrome. `colorScheme` asks the browser to render native controls (`<button>`, `<input>`,
+ * `<select>`, `<meter>`) in their dark variant, so the tactical dispatch look does not stop at
+ * the SVG map.
+ */
+document.documentElement.style.colorScheme = DARK_COLOR_SCHEME;
+document.body.style.margin = NO_MARGIN;
+document.body.style.minHeight = FULL_VIEWPORT_HEIGHT;
+document.body.style.background = PALETTE.background;
+document.body.style.color = PALETTE.text;
+document.body.style.fontFamily = TYPE_SCALE.fontFamily;
+document.body.style.fontSize = TYPE_SCALE.fontSizeBase;
 
 createRoot(mount).render(
   <StrictMode>

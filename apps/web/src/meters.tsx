@@ -17,6 +17,7 @@
  */
 
 import type { Hour, HunterView } from "@manhunter/core";
+import { PALETTE } from "./theme";
 
 /**
  * Declared as data so the list and the type cannot drift, and so a test can assert that every
@@ -146,8 +147,18 @@ export const metersOf = (view: HunterView, bounds: MeterBounds): readonly Meter[
 };
 
 /**
- * A native `<meter>` rather than a styled div: it carries the range in the accessibility tree for
- * free, and PLAN M5.7's visual pass can restyle it without the markup changing shape.
+ * **A native `<meter>`, kept rather than swapped, closing the standing Inbox item (PLAN M5.7).**
+ * The Inbox's other option - `role="meter"` on a styled div - is not available: Biome's
+ * `useSemanticElements` rejects a `meter` ARIA role on anything but the native element ("Replace
+ * with one of these elements: `<meter>`"), and AGENTS.md is explicit that Biome is the source of
+ * truth to run, not argue with. `accentColor` is the confirmation the Inbox asked for: it computes
+ * correctly (checked against a real render's `getComputedStyle`, not assumed) but Chromium's
+ * `<meter>` still paints its own value-range heuristic (green/yellow/red by ratio) over the value
+ * segment regardless, and this project tests Chromium only (AGENTS.md, M0.5's note), so the
+ * dispatch-teal fill this task wanted is not reachable there today. Left in place anyway - it is
+ * the standards-correct property, harmless where the browser ignores it, and effective wherever a
+ * `<meter>` does respect it - and the finding is recorded in this task's Inbox note rather than
+ * worked around with a suppressed lint rule.
  */
 const MeterReadout = ({ meter }: { readonly meter: Meter }) => (
   <div
@@ -159,7 +170,13 @@ const MeterReadout = ({ meter }: { readonly meter: Meter }) => (
   >
     <dt>{meter.label}</dt>
     <dd>
-      <meter aria-label={meter.label} min={meter.min} max={meter.max} value={meter.value} />
+      <meter
+        aria-label={meter.label}
+        min={meter.min}
+        max={meter.max}
+        value={meter.value}
+        style={{ accentColor: PALETTE.accent }}
+      />
       <span data-testid={METER_VALUE_TEST_ID}>{meter.display}</span>
     </dd>
   </div>

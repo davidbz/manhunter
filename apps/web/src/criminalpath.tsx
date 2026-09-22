@@ -17,6 +17,7 @@
 
 import type { MapNode, NodeId, Position, RevealFrame, Turn } from "@manhunter/core";
 import { positionIndexOf } from "./mapnodes";
+import { CRIMINAL_PATH_THEME } from "./theme";
 
 export type CriminalPathTheme = {
   readonly trailStroke: string;
@@ -27,15 +28,11 @@ export type CriminalPathTheme = {
   readonly markerRadius: number;
 };
 
-/** Gold against the map's red heatmap, so the current position reads apart from the trail. */
-export const DEFAULT_CRIMINAL_PATH_THEME: CriminalPathTheme = {
-  trailStroke: "#e8483f",
-  trailWidth: 2,
-  markerFill: "#f2b134",
-  markerStroke: "#0b0f14",
-  markerStrokeWidth: 2,
-  markerRadius: 7,
-};
+/**
+ * Gold against the map's red heatmap, so the current position reads apart from the trail. The
+ * values are `theme.ts`'s `CRIMINAL_PATH_THEME` (PLAN M5.7); this file keeps only the type.
+ */
+export const DEFAULT_CRIMINAL_PATH_THEME: CriminalPathTheme = CRIMINAL_PATH_THEME;
 
 export type CriminalPathProps = {
   readonly frames: readonly RevealFrame[];
