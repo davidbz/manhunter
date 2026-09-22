@@ -15,4 +15,12 @@ export const LIMITS = {
    * replay could carry. Nothing enforces the agreement - same Inbox entry as the bound above.
    */
   maxRecordedTurns: 240,
+  /**
+   * Characters accepted from the new-hunt seed field before the seed is refused (PLAN M5.5a).
+   * The seed is the one number the player types, so it arrives from outside and is bounded
+   * before it is parsed; an entry over this is an error result, never a truncation.
+   * Ten digits is the whole unsigned 32-bit range the RNG seeds from and keeps every accepted
+   * seed inside `Number.MAX_SAFE_INTEGER`, so no second bound on the value is needed.
+   */
+  maxSeedInputLength: 10,
 } as const;
