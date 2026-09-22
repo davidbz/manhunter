@@ -31,6 +31,8 @@ const START_HEAT = 20;
 const START_CASH = 250;
 const CALM = 0;
 const NO_CASUALTIES = 0;
+/** Short enough that `NOW` is already past it, which is what makes the deadline the config's. */
+const SHORT_DEADLINE = 2;
 
 const downtown = makeNodeId("downtown");
 const terminal = makeNodeId("terminal");
@@ -56,15 +58,18 @@ const config: GameConfig = {
 
 type WorldOptions = {
   readonly nodeId?: typeof downtown;
+  readonly inCustody?: boolean;
   readonly trust?: number;
   readonly casualties?: number;
+  readonly turn?: Turn;
+  readonly maxTurns?: number;
 };
 
 const worldAt = (options: WorldOptions = {}): WorldState => ({
   ...makeWorldState({
-    config,
+    config: { ...config, maxTurns: options.maxTurns ?? MAX_TURNS },
     rng: rng.seed(SEED),
-    clock: makeClock(config.startHour, NOW),
+    clock: makeClock(config.startHour, options.turn ?? NOW),
     map: city,
     hunter: makeHunterState({
       actionPoints: START_ACTION_POINTS,
@@ -72,15 +77,18 @@ const worldAt = (options: WorldOptions = {}): WorldState => ({
       trust: options.trust ?? START_TRUST,
       pressure: START_PRESSURE,
     }),
-    criminal: makeCriminalState({
-      nodeId: options.nodeId ?? downtown,
-      travelMode: "foot",
-      profile: "amateur",
-      stamina: START_STAMINA,
-      heat: START_HEAT,
-      cash: START_CASH,
-      desperation: CALM,
-    }),
+    criminal: {
+      ...makeCriminalState({
+        nodeId: options.nodeId ?? downtown,
+        travelMode: "foot",
+        profile: "amateur",
+        stamina: START_STAMINA,
+        heat: START_HEAT,
+        cash: START_CASH,
+        desperation: CALM,
+      }),
+      inCustody: options.inCustody ?? false,
+    },
   }),
   casualties: options.casualties ?? NO_CASUALTIES,
 });
@@ -89,22 +97,22 @@ const SETTINGS: EndConditionSettings = BALANCE.endConditions;
 
 /**
  * Which endings have a rule. Keyed by `EndConditionKind`, so it stops compiling the day a new
- * `GameOutcome` variant appears and nobody says which side of the line it is on - and a `captured`
- * turned to `true` without an entry in the table is a failure here rather than a silent gap.
+ * `GameOutcome` variant appears and nobody says which side of the line it is on.
  */
 const HAS_A_RULE: Readonly<Record<EndConditionKind, boolean>> = {
-  captured: false,
+  captured: true,
   escaped: true,
   trust_collapsed: true,
   casualties_exceeded: true,
+  timed_out: true,
 };
 
 const ruledKinds = (): readonly string[] => END_CONDITIONS.map((condition) => condition.kind);
 
 describe("the end condition table", () => {
   /**
-   * `captured` is the one ending with no rule: the MVP puts no hunter unit on a node, so nothing
-   * can make both sides stand on one (PLAN Inbox, owned by M3.8c). Landing it is one entry.
+   * The table is total as of PLAN M3.11, which landed the capture as one entry. Anything added to
+   * `GameOutcome` from here arrives ruleless and fails this until somebody rules on it.
    */
   it("holds a rule for every ending the MVP can reach, and no others", () => {
     const expected = Object.entries(HAS_A_RULE)
@@ -114,14 +122,35 @@ describe("the end condition table", () => {
     expect([...ruledKinds()].sort()).toEqual([...expected].sort());
   });
 
+  it("leaves no ending without a rule", () => {
+    const ruleless = Object.entries(HAS_A_RULE)
+      .filter(([, hasRule]) => !hasRule)
+      .map(([kind]) => kind);
+
+    expect(ruleless).toEqual([]);
+  });
+
   it("checks them in GameOutcome's own declaration order", () => {
-    expect(ruledKinds()).toEqual(["escaped", "trust_collapsed", "casualties_exceeded"]);
+    expect(ruledKinds()).toEqual([
+      "captured",
+      "escaped",
+      "trust_collapsed",
+      "casualties_exceeded",
+      "timed_out",
+    ]);
   });
 });
 
 describe("the outcome a settled world has earned", () => {
   it("leaves a hunt nothing has finished in progress", () => {
     expect(outcomeAfter(worldAt(), SETTINGS)).toEqual({ kind: "in_progress" });
+  });
+
+  it("ends a hunt whose criminal has been taken", () => {
+    expect(outcomeAfter(worldAt({ inCustody: true }), SETTINGS)).toEqual({
+      kind: "captured",
+      turn: NOW,
+    });
   });
 
   it("ends a hunt whose criminal is standing on an exit", () => {
@@ -163,10 +192,71 @@ describe("the outcome a settled world has earned", () => {
     expect(outcomeAfter(world, SETTINGS)).toEqual({ kind: "in_progress" });
   });
 
+  it("ends a hunt whose deadline has arrived", () => {
+    expect(outcomeAfter(worldAt({ turn: MAX_TURNS }), SETTINGS)).toEqual({
+      kind: "timed_out",
+      turn: MAX_TURNS,
+    });
+  });
+
+  it("leaves a hunt one turn short of its deadline in progress", () => {
+    expect(outcomeAfter(worldAt({ turn: MAX_TURNS - 1 }), SETTINGS)).toEqual({
+      kind: "in_progress",
+    });
+  });
+
+  it("ends a hunt whose clock has somehow run past its deadline", () => {
+    expect(outcomeAfter(worldAt({ turn: MAX_TURNS + 1 }), SETTINGS)).toMatchObject({
+      kind: "timed_out",
+    });
+  });
+
+  /** The deadline is the hunt's own, so two hunts on one balance can run for different lengths. */
+  it("reads the deadline off the hunt's own config rather than the balance", () => {
+    const shortHunt = worldAt({ turn: SHORT_DEADLINE, maxTurns: SHORT_DEADLINE });
+
+    expect(outcomeAfter(shortHunt, SETTINGS)).toMatchObject({ kind: "timed_out" });
+    expect(outcomeAfter(worldAt({ turn: SHORT_DEADLINE }), SETTINGS)).toEqual({
+      kind: "in_progress",
+    });
+  });
+
   it("names the first condition that holds when two hold at once", () => {
     const world = worldAt({ nodeId: terminal, casualties: SETTINGS.casualtiesToLose, trust: 0 });
 
     expect(outcomeAfter(world, SETTINGS)).toMatchObject({ kind: "escaped" });
+  });
+
+  /** A criminal in custody is not at large, whatever else the same turn did (PLAN M3.11). */
+  it("names the capture over every other ending that holds at once", () => {
+    const world = worldAt({
+      inCustody: true,
+      nodeId: terminal,
+      casualties: SETTINGS.casualtiesToLose,
+      trust: SETTINGS.trustCollapseAt,
+      turn: MAX_TURNS,
+    });
+
+    expect(outcomeAfter(world, SETTINGS)).toMatchObject({ kind: "captured" });
+  });
+
+  /** A criminal who walks out on the final turn escaped; the clock is not what ended that hunt. */
+  it("names the escape when the criminal reaches an exit on the final turn", () => {
+    const world = worldAt({ nodeId: terminal, turn: MAX_TURNS });
+
+    expect(outcomeAfter(world, SETTINGS)).toEqual({ kind: "escaped", turn: MAX_TURNS });
+  });
+
+  it("names the trust collapse when the public gives up on the final turn", () => {
+    const world = worldAt({ trust: SETTINGS.trustCollapseAt, turn: MAX_TURNS });
+
+    expect(outcomeAfter(world, SETTINGS)).toMatchObject({ kind: "trust_collapsed" });
+  });
+
+  it("names the casualties when the threshold is reached on the final turn", () => {
+    const world = worldAt({ casualties: SETTINGS.casualtiesToLose, turn: MAX_TURNS });
+
+    expect(outcomeAfter(world, SETTINGS)).toMatchObject({ kind: "casualties_exceeded" });
   });
 
   it("stamps the outcome with the turn the world is on", () => {
@@ -192,19 +282,21 @@ describe("the outcome a settled world has earned", () => {
 });
 
 describe("whether a hunt is over", () => {
-  const ENDED: readonly GameOutcome[] = [
-    { kind: "captured", turn: NOW },
-    { kind: "escaped", turn: NOW },
-    { kind: "trust_collapsed", turn: NOW },
-    { kind: "casualties_exceeded", turn: NOW },
-  ];
+  /** Keyed by kind, so a new ending cannot go unasked (`HAS_A_RULE` does the same for the rules). */
+  const ENDED: Readonly<Record<EndConditionKind, GameOutcome>> = {
+    captured: { kind: "captured", turn: NOW },
+    escaped: { kind: "escaped", turn: NOW },
+    trust_collapsed: { kind: "trust_collapsed", turn: NOW },
+    casualties_exceeded: { kind: "casualties_exceeded", turn: NOW },
+    timed_out: { kind: "timed_out", turn: NOW },
+  };
 
   it("says no while the hunt is in progress", () => {
     expect(isHuntOver({ kind: "in_progress" })).toBe(false);
   });
 
   it("says yes for every ending, including the one no rule produces yet", () => {
-    for (const outcome of ENDED) {
+    for (const outcome of Object.values(ENDED)) {
       expect(isHuntOver(outcome)).toBe(true);
     }
   });

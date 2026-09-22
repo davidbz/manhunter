@@ -13,7 +13,8 @@
  * first whose artefacts outlive such a change). A replay from another version is refused, never
  * migrated: there is nothing to migrate, because the same actions against a moved stream are a
  * different hunt. Bump `REPLAY_VERSION` whenever anything that moves the stream or the grammar
- * below changes.
+ * below changes - and, as version 2 records, whenever a rule changes what the same seed and the
+ * same queues produce, which is the third way a recording stops reproducing.
  *
  * The string is URL-safe by construction rather than by escaping. Every character it can contain
  * is unreserved in RFC 3986 (`A-Za-z0-9`, `-`, `.`, `_`, `~`), so `encodeURIComponent` leaves it
@@ -40,8 +41,29 @@ import { makeEdgeId, makeNodeId } from "./ids";
 import { LIMITS } from "./limits";
 import type { Turn } from "./time";
 
-/** The grammar and the stream below it. See the version note above before changing either. */
-export const REPLAY_VERSION = 1;
+/**
+ * The grammar and the stream below it. See the version note above before changing either.
+ *
+ * 2 (PLAN M4.2a): neither the grammar nor the stream moved, but `END_CONDITIONS` gained the
+ * deadline, so a version 1 recording of a hunt that reached its own `setup.maxTurns` ends
+ * `timed_out` where it used to end `in_progress`. Same seed, same queues, different final world -
+ * which is exactly what this field exists to make loud.
+ *
+ * 3 (PLAN M3.11): the stream moved, which is the first trigger above. A criminal that walks into a
+ * checkpoint it did not know about is now a draw - taken, or through - so every hunt in which a
+ * roadblock was ever hit consumes one number more than it used to, and everything drawn after that
+ * collision comes out different. Version 2 recordings of hunts nobody ever blocked would still
+ * play, but nothing can tell those apart from the rest without playing them both ways.
+ *
+ * 4 (PLAN M4.3): the third trigger again, and the first time a balance value rather than a rule
+ * pulled it. `actions.roadblock.slipPastChance` moved from 0.6 to 0.7, so a criminal that walked
+ * into a checkpoint at the version this recording was written is now taken where it used to get
+ * through, or the reverse. The stream does not move - the draw is taken either way (PLAN M3.11) -
+ * but the same seed and the same queues produce a different hunt from that collision on, and a
+ * replay does not carry the balance it was played under, so the version is the only thing that can
+ * say so. Every balance change that a rule reads pulls this trigger.
+ */
+export const REPLAY_VERSION = 4;
 
 export type Replay = {
   readonly version: number;
@@ -258,9 +280,17 @@ const overlongQueue = (replay: Replay): ReplayRefusal | null => {
 
 /**
  * What neither direction will carry, checked against the replay itself so both directions refuse
- * the same set. `LIMITS.maxGameTurns` bounds the recorded turns as well as the deadline, because
- * a replay is played back one `step` per entry and that loop is as untrusted as the string it came
- * from - which is the use `maxGameTurns`'s own note in `limits.ts` names.
+ * the same set. A replay is played back one `step` per recorded turn, and that loop is as
+ * untrusted as the string it came from - which is the use `maxGameTurns`'s own note in `limits.ts`
+ * names.
+ *
+ * The recorded turns are bounded by the replay's **own** deadline rather than by `maxGameTurns`
+ * (PLAN M4.2a). Since `END_CONDITIONS` ends a hunt on `clock.turn >= config.maxTurns`, a hunt can
+ * play at most `setup.maxTurns` turns, so a longer recording is of a hunt that could not have
+ * happened; refusing it here is cheaper than stepping 240 turns to discover that the last 200 were
+ * `hunt_over`. The deadline itself is checked first and against `maxGameTurns`, so by the time the
+ * recorded turns are counted the setup's own number is the tighter of the two and `maxGameTurns`
+ * is still what caps the work.
  */
 export const replayRefusalIn = (replay: Replay): ReplayRefusal | null => {
   if (replay.version !== REPLAY_VERSION) {
@@ -273,11 +303,11 @@ export const replayRefusalIn = (replay: Replay): ReplayRefusal | null => {
       maxTurns: LIMITS.maxGameTurns,
     };
   }
-  if (replay.actions.length > LIMITS.maxGameTurns) {
+  if (replay.actions.length > replay.setup.maxTurns) {
     return {
       kind: "too_many_turns",
       recordedTurns: replay.actions.length,
-      maxTurns: LIMITS.maxGameTurns,
+      maxTurns: replay.setup.maxTurns,
     };
   }
   return overlongQueue(replay);

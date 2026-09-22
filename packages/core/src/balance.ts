@@ -227,8 +227,23 @@ const BELIEF: BeliefSettings = {
 };
 
 /**
- * What each ending is worth before the components are applied. Only a capture scores a base:
- * DESIGN.md scores the win, and a loss is left to be told apart by its components.
+ * What each ending is worth before the components are applied. A capture scores the win DESIGN.md
+ * describes; the three losses score nothing and are told apart by their components.
+ *
+ * `timed_out` is the one ending in between (PLAN M4.2a). Running out of clock is not on DESIGN.md's
+ * loss list: the criminal is still loose, but they are still in the city, and a hunter who
+ * contained them for the whole deadline did better than one who watched them walk out of it. Two
+ * ceilings hold it down. It sits below `trustMax * trustBonusPerPoint`, so how the hunt was run
+ * still outweighs the fact that the clock stopped it; and the best possible stalemate stays under
+ * the worst possible capture, which is the invariant `balance.test.ts` asserts over this whole
+ * table.
+ *
+ * PLAN M4.3 kept it at 150 on measurement rather than on preference: the base cannot reach the
+ * total. A stalemate is a hunt that ran its `maxTurns`, so it always pays the full clock penalty -
+ * `time.maxTurns * score.turnPenalty`, which is 360 - and the two ceilings above cap this row at
+ * 289. Every one of 32 stalemates in a 400-hunt greedy batch scored `minimumScore` at 150, at 199
+ * and at 289 alike, so no legal setting of this row moves a single total. What would is the floor
+ * or the clock penalty, and picking between those is a score-model decision the PLAN Inbox holds.
  */
 const OUTCOME_BASE: Readonly<Record<GameOutcome["kind"], number>> = {
   in_progress: 0,
@@ -236,6 +251,77 @@ const OUTCOME_BASE: Readonly<Record<GameOutcome["kind"], number>> = {
   escaped: 0,
   trust_collapsed: 0,
   casualties_exceeded: 0,
+  timed_out: 150,
+};
+
+/**
+ * The checkpoint (DESIGN.md "Hunter actions"), and the only MVP action that can end a hunt in the
+ * hunter's favour. Named and annotated rather than written inline, like the tables above it, so
+ * that `slipPastChance` is a `number` in `Balance` and a sweep (PLAN M4.3) can vary it.
+ */
+type RoadblockSettings = {
+  readonly actionPointCost: number;
+  readonly budgetCost: number;
+  readonly trustCost: number;
+  readonly durationTurns: number;
+  /**
+   * How often a criminal that walks into a checkpoint it did not know about gets through it
+   * anyway; the other side of the number is the MVP's only win (PLAN M3.11). A block the criminal
+   * already knows about is routed around and never hit, so this is a chance per surprise and not
+   * a chance per roadblock standing.
+   */
+  readonly slipPastChance: number;
+};
+
+/**
+ * The MVP's win rate is set here, because this is the only knob that moves it directly: a
+ * checkpoint is the only action that can end a hunt in the hunter's favour, so how often one is
+ * slipped past is how often the hunt is lost.
+ *
+ * The balance targets PLAN M4.3 tuned it to, asserted by `packages/sim/src/balance.slow.test.ts`
+ * over its own hard-coded seed list:
+ *
+ * - **A hunter who works the criminal's own route captures between half and seven tenths of the
+ *   time.** The ceiling says three hunts in ten get away from the best play the MVP allows, so
+ *   knowing where the criminal is going is not the same as having them, which is DESIGN.md's core
+ *   feeling. The floor says working the route is still worth doing.
+ * - **A hunter with no plan captures between a fiftieth and a fifth.** The floor keeps an
+ *   untargeted checkpoint from being decoration; the ceiling keeps flailing from being a strategy.
+ * - **A worked hunt lasts more than six turns**, against the four and a half it takes when nobody
+ *   works it, so a hunt is a hunt and not four decisions (PLAN Inbox).
+ * - **A hunter who plays outscores one who does nothing**, several times over (PLAN Inbox).
+ *
+ * The curve was measured rather than derived, over 400 hunts from four disjoint seed blocks on the
+ * default grid. A hunter closing the corridor captures 97% at 0, 88% at 0.4, 70% at 0.6, 60% at
+ * 0.7 and 22% at 0.9; an aimless one captures 17%, 11%, 9%, 7% and 2% at the same points, and a
+ * worked hunt runs 2.3, 4.3, 7.0, 8.6 and 14.1 turns.
+ *
+ * Both win rates fall together, and the band on a worked hunt is the one that bites. Its edges were
+ * measured rather than guessed: the targets fail at 0.58 (71.8%, over the ceiling) and at 0.78
+ * (47.5%, under the floor), so [0.60, 0.75] is what passes them. 0.7 is not the middle of that
+ * window but the middle of the band - 60% is halfway between the floor and the ceiling, and 0.7 is
+ * where the curve crosses it - and it is where the other targets sit furthest inside their own
+ * (8.6 turns against 4.7, 695 points against 52). The band on an aimless hunter is a guard rail
+ * rather than a constraint that chose this number: it reads 11.5% at 0.5 and 4.0% at 0.85, inside
+ * [0.02, 0.2] the whole way, and only a checkpoint nobody can ever be taken at falls out of it.
+ *
+ * What the knob does *not* move is whether a checkpoint holds. A hunter closing every road out of
+ * the criminal's own node loses exactly one hunt in 200 to an exit at 0.6, 0.65, 0.7 and 0.75
+ * alike; what rises with the knob is how long the hold lasts (5.9, 7.1, 9.0 and 11.0 turns) and
+ * how often the clock beats the hunter to the arrest. A surrounded criminal that is not taken is
+ * `timed_out`, not `escaped`, which is why that row exists (PLAN M4.2a) and why `turn.test.ts`
+ * pins a contained hunt as well as a captured one.
+ *
+ * The number is set from the hunt and not from the single collision: a hunter who works the route
+ * runs the criminal into several checkpoints before the deadline, so a chance that reads as
+ * generous each time it happens still ends a worked hunt in a capture three times in five.
+ */
+const ROADBLOCK: RoadblockSettings = {
+  actionPointCost: 1,
+  budgetCost: 50,
+  trustCost: 3,
+  durationTurns: 4,
+  slipPastChance: 0.7,
 };
 
 export const BALANCE = {
@@ -268,7 +354,7 @@ export const BALANCE = {
   },
 
   actions: {
-    roadblock: { actionPointCost: 1, budgetCost: 50, trustCost: 3, durationTurns: 4 },
+    roadblock: ROADBLOCK,
     canvass: { actionPointCost: 1, budgetCost: 20, trustCost: 1 },
     /** DESIGN.md: reliable, and about the past. Delay and lookback are both in turns. */
     pullCctv: {
@@ -343,8 +429,9 @@ export const BALANCE = {
    * base, so M3.10's breakdown reads as a receipt rather than a verdict.
    *
    * The weights are set so that the worst possible capture still outscores the best possible
-   * loss - a hunt won the ugly way beats one lost with the public still on side. `balance.test.ts`
-   * asserts that, so tuning these cannot quietly invert the game's values.
+   * ending short of one - a hunt won the ugly way beats one lost with the public still on side,
+   * and beats a stalemate. `balance.test.ts` asserts that over every `outcomeBase` row, so tuning
+   * these cannot quietly invert the game's values.
    *
    * Political pressure is deliberately absent: it tracks the clock, and turns taken is already
    * a component. So is captured-alive: no MVP action can use force, so the flag would be `true`

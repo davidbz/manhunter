@@ -8,18 +8,48 @@
  * The bot caps below are those.
  */
 export const LIMITS = {
-  /** Games one `bun run sim` invocation may simulate (PLAN M4.2). */
-  maxGamesPerRun: 100_000,
   /**
-   * Bytes a single written artefact may reach before the write is rejected (PLAN M2.4, M4.2).
-   * Kept at the M0.2 placeholder deliberately: M2.4 implemented the boundary and measured its own
-   * artefact at 14.5 KB for a default 8x6 map, three orders of magnitude inside this, so the bound
-   * is really sized for M4.2's batch report over up to `maxGamesPerRun` games. Tuning it down to
-   * map scale would only move the failure into the task that has the larger artefact.
+   * Games one `bun run sim` invocation may simulate (PLAN M4.2).
+   *
+   * Tuned down from M0.2's placeholder 100_000 on measurement, the way PLAN M2.3 tuned
+   * `maxMapGenerationAttempts`. **Time is the only constraint; memory is not.** The runner folds
+   * each hunt as it ends and keeps two of them, so a run's heap is flat in the number of games
+   * (measured: under 12 MB of heap and a 1.6 KB report for a 1000-game batch, the same for 100).
+   * What a batch costs is wall clock: **8 ms a game on the default 8x6 grid at a 24-turn deadline,
+   * and 280 ms a game on the widest legal one** (16x16, the 240-turn `maxGameTurns` deadline).
+   * At 100_000 those are 13 minutes and **8 hours**; at 10_000 they are 80 seconds and 47
+   * minutes. A cap is what a mistyped `--games` runs into, so it is set where the worst legal
+   * config still finishes inside an hour, and it leaves an order of magnitude over the largest
+   * batch anything in the plan asks for (PLAN M4.3's targets, and M4.2b's 1000-game reference).
+   */
+  maxGamesPerRun: 10_000,
+  /**
+   * Bytes a single written artefact may reach before the write is rejected (PLAN M2.4, M4.2c).
+   * Kept at the M0.2 placeholder, but no longer for the reason M2.4 gave: it expected M4.2's batch
+   * report to be the large artefact, and M4.2b measured that report at about 1.6 KB whatever the
+   * batch size, because the fold keeps two hunts and not `maxGamesPerRun` of them. **The largest
+   * thing `sim` writes is still M2.4's map SVG, at 14.5 KB for a default 8x6 map**, and the widest
+   * legal map (`core`'s `maxMapNodes`, 256 nodes) scales that to well under a megabyte.
+   * So this is three orders of magnitude of headroom over the real worst case rather than a bound
+   * sized to it, and it stays there deliberately: it is the backstop against a bug that builds an
+   * unbounded string, not a budget any artefact is expected to approach.
    */
   maxOutputFileBytes: 16 * 1024 * 1024,
-  /** CLI arguments accepted before the invocation is rejected (PLAN M4.2). */
+  /**
+   * CLI arguments accepted before the invocation is rejected (PLAN M4.2c). Six flags with a value
+   * each is twelve arguments, so this is not quite three times what the shipped grammar can use;
+   * the headroom is for flags later tasks add, not for repetition.
+   */
   maxCliArguments: 32,
+  /**
+   * Characters a single CLI argument may hold (PLAN M4.2c). `maxCliArguments` bounds how many
+   * arguments arrive and this bounds how large one may be, which is what makes argv a bounded
+   * input in bytes and not only in count (AGENTS.md section 5). The longest argument the grammar
+   * has a use for is `--out`'s directory, so it is sized at the 4096 bytes POSIX `PATH_MAX`
+   * allows: a path this side of it may still be rejected by the filesystem, and one past it cannot
+   * be a path at all.
+   */
+  maxCliArgumentLength: 4_096,
   /**
    * Candidate actions a scripted bot may enumerate for one decision (PLAN M4.1), the counterpart
    * of `core`'s `maxAiCandidates` on the hunter's side. A bot enumerates over a map that came out

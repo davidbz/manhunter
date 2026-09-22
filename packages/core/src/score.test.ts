@@ -302,6 +302,7 @@ describe("what an ending is worth on its own", () => {
     escaped: { kind: "escaped", turn: ESCAPE_TURN },
     trust_collapsed: { kind: "trust_collapsed", turn: ESCAPE_TURN },
     casualties_exceeded: { kind: "casualties_exceeded", turn: ESCAPE_TURN },
+    timed_out: { kind: "timed_out", turn: MAX_TURNS },
   };
 
   it("scores each one at the base its balance names, and carries the outcome back", () => {
@@ -318,21 +319,29 @@ describe("what an ending is worth on its own", () => {
    * that has to make it true: a hunt won the ugly way - the full deadline, the whole budget, one
    * casualty short of losing and no public left - still beats one lost with the city on side.
    */
-  it("makes the worst capture outscore the best loss", () => {
+  it("makes the worst capture outscore the best ending short of one", () => {
     const worstCapture = scoreOf({
       outcome: { kind: "captured", turn: BALANCE.time.maxTurns },
       trust: NO_TRUST,
       budgetSpent: BALANCE.hunter.startingBudget,
       casualties: BALANCE.endConditions.casualtiesToLose - 1,
     });
-    const bestLoss = scoreOf({
-      outcome: { kind: "escaped", turn: 0 },
-      trust: BALANCE.hunter.trustMax,
-      budgetSpent: NOTHING_SPENT,
-      casualties: NO_CASUALTIES,
-    });
+    const atTheFirstTurn = (outcome: GameOutcome): GameOutcome =>
+      outcome.kind === "in_progress" ? outcome : { ...outcome, turn: 0 };
+    const bestOf = (outcome: GameOutcome): number =>
+      scoreOf({
+        outcome: atTheFirstTurn(outcome),
+        trust: BALANCE.hunter.trustMax,
+        budgetSpent: NOTHING_SPENT,
+        casualties: NO_CASUALTIES,
+      }).total;
 
-    expect(worstCapture.total).toBeGreaterThan(bestLoss.total);
+    for (const [kind, outcome] of Object.entries(OUTCOMES)) {
+      if (kind === "captured") {
+        continue;
+      }
+      expect(worstCapture.total).toBeGreaterThan(bestOf(outcome));
+    }
     expect(worstCapture.total).toBeGreaterThan(BALANCE.score.minimumScore);
   });
 });
