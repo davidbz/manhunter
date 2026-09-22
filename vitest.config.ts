@@ -55,6 +55,13 @@ export default defineConfig({
           root: "apps/web",
           /** The one project with a DOM (PLAN M5.2). Playwright still owns the e2e flows. */
           environment: "jsdom",
+          /**
+           * Vitest replaces a CSS import with an empty string unless this is on, and it applies
+           * that to `index.css?raw` as well (PLAN M6.1). `cssvariables.test.ts` reads the
+           * stylesheet as text to check its `var(--mh-*)` references against the published tokens,
+           * so the empty string would have made that check silently vacuous.
+           */
+          css: true,
           include: TEST_FILES,
           exclude: SLOW_FILES,
         },

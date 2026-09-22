@@ -27,15 +27,13 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { cssVariablesOf } from "./cssvariables";
 import { createGameStore } from "./gamestore";
 import { replayParamOf } from "./sharelinkurl";
 import { GameStoreProvider } from "./storecontext";
-import { PALETTE, TYPE_SCALE } from "./theme";
+import { DESIGN_TOKENS } from "./theme";
 
 const MOUNT_ELEMENT_ID = "root";
-const NO_MARGIN = "0";
-const FULL_VIEWPORT_HEIGHT = "100vh";
-const DARK_COLOR_SCHEME = "dark";
 
 const rng = createRng();
 const graph = createGraphLogic();
@@ -82,22 +80,21 @@ if (!mount) {
 }
 
 /**
- * DESIGN.md's "Visual direction" ("dark background... monospace report feed") applied once, here,
- * rather than a stylesheet (PLAN M5.7): `apps/web` has no CSS file, and one holding these same
- * values would be a second copy of `theme.ts`'s palette the colour-literal test could not see.
- * `document.body` is outside `#root`, so a React component can never reach it; the composition
- * root already touches the DOM once for `MOUNT_ELEMENT_ID`, and this is the same kind of one-time
- * page chrome. `colorScheme` asks the browser to render native controls (`<button>`, `<input>`,
- * `<select>`, `<meter>`) in their dark variant, so the tactical dispatch look does not stop at
- * the SVG map.
+ * The design tokens, published to the document element so `index.css` can read them (PLAN M6.1).
+ * This is the one direction the values are allowed to travel: `theme.ts` is the single source, the
+ * stylesheet holds no literal of its own, and the colour-literal test can therefore still see
+ * every colour `apps/web` draws with. M5.7 applied the page chrome as `document.body.style.*`
+ * assignments precisely because there was no stylesheet to read a variable from; the rules those
+ * assignments stood in for now live in `index.css`, which is where `:focus-visible`,
+ * `@keyframes` and `prefers-reduced-motion` can reach them and an inline style object cannot.
+ *
+ * `document.documentElement` is outside `#root`, so a React component can never reach it, and the
+ * composition root already touches the DOM once for `MOUNT_ELEMENT_ID`.
  */
-document.documentElement.style.colorScheme = DARK_COLOR_SCHEME;
-document.body.style.margin = NO_MARGIN;
-document.body.style.minHeight = FULL_VIEWPORT_HEIGHT;
-document.body.style.background = PALETTE.background;
-document.body.style.color = PALETTE.text;
-document.body.style.fontFamily = TYPE_SCALE.fontFamily;
-document.body.style.fontSize = TYPE_SCALE.fontSizeBase;
+const root = document.documentElement;
+for (const [name, value] of Object.entries(cssVariablesOf(DESIGN_TOKENS))) {
+  root.style.setProperty(name, value);
+}
 
 createRoot(mount).render(
   <StrictMode>

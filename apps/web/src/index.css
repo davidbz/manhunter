@@ -1,0 +1,101 @@
+/*
+ * The page chrome for the dispatch board (PLAN M6.1). Linked from `index.html` rather than
+ * imported from `main.tsx`, because `apps/web/tsconfig.json` sets `"types": []` and a CSS import
+ * would need either `vite/client`'s ambient declarations or a `*.css` shim - a wider type surface
+ * than a stylesheet is worth, when the stylesheet is page chrome that exists before React mounts.
+ *
+ * Every value here is a `var(--mh-*)` custom property written onto the document element by
+ * `main.tsx` from `theme.ts`'s design tokens. There is deliberately not one colour literal in this
+ * file: `tools/theme/colorliterals.test.ts` scans it with no exemption, the way it scans every
+ * `.tsx` outside the token file.
+ *
+ * Layout lives in PLAN M6.2, not here. What this file owns is the reset, the ground the board
+ * sits on, the focus treatment, and the reduced-motion guard every later task's animation obeys.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--mh-color-background);
+  color: var(--mh-color-text);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-base);
+  line-height: var(--mh-font-line-height-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--mh-font-family-display);
+  font-weight: var(--mh-font-weight-black);
+  letter-spacing: var(--mh-font-tracking-wide);
+  line-height: var(--mh-font-line-height-tight);
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: var(--mh-font-size-hero);
+}
+
+h2 {
+  font-size: var(--mh-font-size-display);
+}
+
+h3 {
+  font-size: var(--mh-font-size-large);
+}
+
+::selection {
+  background: var(--mh-color-accent);
+  color: var(--mh-color-surface-sunken);
+}
+
+/*
+ * The keyboard-focus treatment the map has been missing since PLAN M5.3a. `:focus-visible` has no
+ * one-time DOM-property equivalent, which is why M5.7 could not close that Inbox item without a
+ * stylesheet; the map's own node and edge targets get their reticle in M6.5, on top of this.
+ */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--mh-shadow-focus-ring);
+}
+
+/*
+ * DESIGN.md: "Motion is confirmation, never decoration." Anyone who has asked their system to stop
+ * moving things gets the confirmation without the movement.
+ *
+ * **Motion is opt-in, not opted out of.** Every animated rule in this codebase goes inside a
+ * `@media (prefers-reduced-motion: no-preference)` block, the way the one below does. The more
+ * familiar arrangement - a blanket `* { animation-duration: 1ms !important }` under
+ * `prefers-reduced-motion: reduce` - is rejected by Biome's `noImportantStyles`, and it only ever
+ * worked *because* of the `!important`: a universal selector has no specificity, so without it the
+ * reset loses to every component rule it is meant to override. Opting in has no such hole, needs
+ * no escape hatch, and fails safe when someone forgets - a missed block means no animation, not an
+ * unstoppable one. PLAN M6.10 asserts the guarantee holds once there are animations to assert it
+ * over.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :focus-visible {
+    transition: box-shadow var(--mh-motion-duration-fast) var(--mh-motion-ease-out);
+  }
+}

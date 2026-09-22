@@ -77,7 +77,7 @@ const REGION_TYPES: NonEmptyArray<DistrictType> = [
 
 /**
  * DESIGN.md's four kinds. Which kind an exit gets is flavour: no MVP rule reads it, and the
- * schedule that would (`timed`) is M6. Drawn uniformly rather than placed by geography - the
+ * schedule that would (`timed`) is M7. Drawn uniformly rather than placed by geography - the
  * river is presentation only (M2.1b), so siting a port on it would be the first rule to read it.
  */
 const EXIT_KINDS: NonEmptyArray<ExitKind> = ["airport", "port", "border", "highway"];

@@ -138,10 +138,21 @@ Budget is not an end condition. It is enforced when an action is planned: an act
 
 Stored as `{ seed, setup, hunterActions[] }`, where `setup` is the player-visible half of the configuration. The criminal's profile is *not* stored: it is derived from the seed, so a shared replay link does not spoil the hunt it replays. Replay reveals the criminal's true path over the hunter's heatmap, turn by turn.
 
-## Visual direction (initial)
+## Visual direction
 
-"Tactical dispatch screen": dark background, thin glowing roads, red heatmap, monospace report feed. Code-drawn, no illustrated assets required for MVP.
+**"Payday dispatch board x Door Kickers tactical plan."** Everything is code-drawn: procedural SVG, hand-authored path icons, filter-generated grain. No illustrated assets, so no licence question and nothing to load over a network.
+
+- **Ground.** Near-black with very low-frequency grain rather than a flat fill. Panels are raised planes with a hairline top edge, not boxes with borders.
+- **The map is the hero.** It holds the dominant column at all times and is the only surface allowed saturated colour.
+- **Districts are blocks, not dots.** Every node owns a footprint polygon, filled in a desaturated district tone with a per-district hatch, separated by ground-coloured gaps so streets read as streets. One glance answers "what kind of place is this".
+- **Roads are casing plus fill.** A dark wide stroke under a bright narrow stroke, with the glow beneath both. Edge kinds differ by dash and width, never by hue alone, so the map survives being read by someone who cannot separate the hues.
+- **Day and night are visible.** The clock drives a wash over the whole plate. Parks fall to zero witness density at night, so night should look like it costs something.
+- **Hue discipline.** Red is the criminal - heat, incidents, checkpoints that fired. Gold is objectives and money. Cyan is the player's own instruments - selection, focus, the armed tool. Nothing else is saturated.
+- **Type.** Two families: a heavy condensed display stack for headings, meters and the case number, and a monospace stack for the report feed and every timestamp. The feed is monospace because a dispatch log reads as a log. System fonts only.
+- **Motion is confirmation, never decoration.** A report landing, a meter moving, a turn advancing, a checkpoint firing - and nothing else. All of it disabled under `prefers-reduced-motion`.
+
+Avatars are procedural and seeded, and the criminal's is subject to the hidden-information rule: before the reveal the dossier shows a redacted silhouette that is identical across seeds, because an appearance derived from the seed would correlate with the profile the hunter view exists to hide. The true portrait belongs to the debrief.
 
 ## Out of scope for MVP
 
-PvP, campaign mode, hostage negotiation, unit fatigue, mobile layout, audio, portraits, save/load beyond replay strings.
+PvP, campaign mode, hostage negotiation, unit fatigue, mobile layout, audio, save/load beyond replay strings. (Portraits were on this list for the MVP and are not any more: the visual overhaul that follows it makes avatars part of the game's identity.)
