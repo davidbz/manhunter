@@ -16,8 +16,10 @@ import {
   createGraphLogic,
   createIntelLogic,
   createMinCutLogic,
+  createPlaybackLogic,
   createRiverLogic,
   createRng,
+  createScoringLogic,
   createTopologyLogic,
   createTurnLogic,
   createValidatorLogic,
@@ -54,7 +56,10 @@ const turn = createTurnLogic({
   graph,
 });
 
-const store = createGameStore({ game, turn }, BALANCE);
+const scoring = createScoringLogic();
+const playback = createPlaybackLogic({ game, turn });
+
+const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
 
 const mount = document.getElementById(MOUNT_ELEMENT_ID);
 if (!mount) {

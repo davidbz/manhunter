@@ -34,6 +34,7 @@ import {
   type NodeId,
   type Position,
 } from "@manhunter/core";
+import { positionIndexOf } from "./mapnodes";
 
 /** How a normalised belief mass is turned into a blob. Both ends are drawn, neither is a default. */
 export type HeatRamp = {
@@ -110,9 +111,6 @@ export const heatOf = (ramp: HeatRamp, mass: number, peak: number): Heat | null 
 export const peakBeliefMass = (cells: readonly BeliefCell[]): number =>
   cells.reduce((peak, cell) => Math.max(peak, cell.mass), NO_HEAT);
 
-const positionsOf = (nodes: readonly MapNode[]): ReadonlyMap<NodeId, Position> =>
-  new Map(nodes.map((node) => [node.id, node.position]));
-
 type PlacedCell = {
   readonly cell: BeliefCell;
   readonly position: Position;
@@ -138,7 +136,7 @@ export const beliefHeatOf = (
   nodes: readonly MapNode[],
   ramp: HeatRamp,
 ): readonly BeliefHeat[] => {
-  const placed = placedCells(belief, positionsOf(nodes));
+  const placed = placedCells(belief, positionIndexOf(nodes));
   const peak = peakBeliefMass(placed.map((each) => each.cell));
 
   return placed.flatMap(({ cell, position }) => {

@@ -23,4 +23,13 @@ export const LIMITS = {
    * seed inside `Number.MAX_SAFE_INTEGER`, so no second bound on the value is needed.
    */
   maxSeedInputLength: 10,
+  /**
+   * Actions one turn's queue may hold before the board refuses to take another (PLAN M5.5b).
+   * The queue is built one click at a time, so it is user input and is bounded where it
+   * accumulates rather than after it is handed over. Kept equal to `core`'s
+   * `LIMITS.maxQueuedActions`, which is what `step` refuses a longer queue by: a queue this side
+   * accepted and that side refused would cost the player the whole turn instead of one row.
+   * Nothing enforces the agreement - same Inbox entry as `maxRecordedTurns`.
+   */
+  maxQueuedActions: 32,
 } as const;

@@ -11,12 +11,15 @@ import {
   createGraphLogic,
   createIntelLogic,
   createMinCutLogic,
+  createPlaybackLogic,
   createRiverLogic,
   createRng,
+  createScoringLogic,
   createTopologyLogic,
   createTurnLogic,
   createValidatorLogic,
   makeEdgeId,
+  makeReplay,
 } from "@manhunter/core";
 import { describe, expect, it } from "vitest";
 import { createGameStore, type GameStore, type GameStoreState, type Hunt } from "./gamestore";
@@ -61,6 +64,9 @@ const turn = createTurnLogic({
   graph,
 });
 
+const scoring = createScoringLogic();
+const playback = createPlaybackLogic({ game, turn });
+
 const SETUP: GameSetup = {
   map: { columns: 8, rows: 6, exitCount: 3 },
   maxTurns: 24,
@@ -89,7 +95,7 @@ const huntIn = (store: GameStore): Hunt => {
 };
 
 const startedStore = (): GameStore => {
-  const store = createGameStore({ game, turn }, BALANCE);
+  const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
   store.getState().start({ setup: SETUP, seed: SEED });
   return store;
 };
@@ -109,7 +115,7 @@ describe("the game store", () => {
   });
 
   it("holds no hunt until one is started", () => {
-    const store = createGameStore({ game, turn }, BALANCE);
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
 
     expect(store.getState().hunt).toBeNull();
     expect(store.getState().refusal).toBeNull();
@@ -164,7 +170,7 @@ describe("the game store", () => {
   });
 
   it("refuses a hunt whose deadline core will not accept, and starts nothing", () => {
-    const store = createGameStore({ game, turn }, BALANCE);
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
 
     store.getState().start({ setup: { ...SETUP, maxTurns: Number.MAX_SAFE_INTEGER }, seed: SEED });
 
@@ -173,7 +179,7 @@ describe("the game store", () => {
   });
 
   it("refuses to end a turn when no hunt is running", () => {
-    const store = createGameStore({ game, turn }, BALANCE);
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
 
     store.getState().endTurn([]);
 
@@ -203,6 +209,46 @@ describe("the game store", () => {
 });
 
 /**
+ * PLAN M5.6b's replay scrubber reads `hunt.frames`. It is `null` while a hunt is running - the
+ * only way `apps/web` may learn the criminal's path is to play the replay back, and doing that
+ * before the hunt is over would hand a live world's position to the UI (`gamestore.ts`'s note).
+ */
+describe("the replay it builds once a hunt settles", () => {
+  it("has no frames while the hunt is in progress", () => {
+    const store = startedStore();
+
+    expect(huntIn(store).frames).toBeNull();
+
+    store.getState().endTurn([]);
+
+    expect(huntIn(store).view.outcome.kind).toBe("in_progress");
+    expect(huntIn(store).frames).toBeNull();
+  });
+
+  it("gets one frame per turn played, ending on the criminal's true final position", () => {
+    const store = playedOut(startedStore());
+    const settled = huntIn(store);
+
+    expect(settled.frames).not.toBeNull();
+    expect(settled.frames).toHaveLength(settled.recordedActions.length + 1);
+    expect(settled.frames?.at(-1)?.turn).toBe(settled.view.clock.turn);
+  });
+
+  it("replays the same seed, setup and log the store recorded", () => {
+    const store = playedOut(startedStore());
+    const settled = huntIn(store);
+    const replay = makeReplay({
+      seed: settled.seed,
+      setup: settled.setup,
+      actions: settled.recordedActions,
+    });
+    const replayed = playback.play({ replay, balance: BALANCE });
+
+    expect(replayed).toEqual({ kind: "playback", frames: settled.frames, world: settled.world });
+  });
+});
+
+/**
  * The bound on the action log (AGENTS.md section 5). A hunt with no outcome has no deadline rule
  * to stop it, so the log is the thing that grows; the shipped turn logic cannot reach the cap
  * because every MVP hunt ends in about five turns, so the turn it steps is faked while the world
@@ -212,9 +258,13 @@ describe("the action log's bound", () => {
   const echoing: TurnLogic = {
     step: ({ world }) => ({ kind: "turn", world, events: [], rejections: [] }),
   };
+  const echoingPlayback = createPlaybackLogic({ game, turn: echoing });
 
   const filledStore = (): GameStore => {
-    const store = createGameStore({ game, turn: echoing }, BALANCE);
+    const store = createGameStore(
+      { game, turn: echoing, scoring, playback: echoingPlayback },
+      BALANCE,
+    );
     store.getState().start({ setup: SETUP, seed: SEED });
     for (let played = 0; played < LIMITS.maxRecordedTurns; played += 1) {
       store.getState().endTurn([]);

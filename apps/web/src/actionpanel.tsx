@@ -96,7 +96,8 @@ const BUDGET_SUFFIX = " budget";
 const CHOOSE_PROMPT = "Choose an action";
 const READY_PREFIX = "Ready: ";
 const READY_SEPARATOR = " - ";
-const GLOBAL_TARGET_LABEL = "the whole city";
+/** Exported because PLAN M5.5b's queue names the same target, and the city has one name here. */
+export const GLOBAL_TARGET_LABEL = "the whole city";
 
 export const costLabel = (cost: ActionCost): string =>
   `${cost.actionPoints}${ACTION_POINT_SUFFIX}${COST_SEPARATOR}${cost.budget}${BUDGET_SUFFIX}`;

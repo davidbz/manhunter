@@ -22,9 +22,22 @@ export const GameStoreProvider = ({
   readonly children: ReactNode;
 }) => <GameStoreContext value={store}>{children}</GameStoreContext>;
 
-export const useGameStore = <T,>(selector: (state: GameStoreState) => T): T => {
+/**
+ * The store itself, for the one thing a selector cannot do: read the state a dispatch has just
+ * written, inside the handler that dispatched it (PLAN M5.5b). Ending a turn has to know whether
+ * the turn happened before it decides what to do with the queue, and a selector's value is the
+ * one from the render that is already over.
+ *
+ * It exposes no more than `useGameStore` does - `GameStoreState` names no member of the world
+ * (architecture rule 4, and `gamestore.test.ts` asserts it) - and it subscribes to nothing, so a
+ * component that only dispatches does not re-render on every write.
+ */
+export const useGameStoreApi = (): GameStore => {
   const store = useContext(GameStoreContext);
   if (!store) throw new Error(MISSING_PROVIDER);
 
-  return useStore(store, selector);
+  return store;
 };
+
+export const useGameStore = <T,>(selector: (state: GameStoreState) => T): T =>
+  useStore(useGameStoreApi(), selector);

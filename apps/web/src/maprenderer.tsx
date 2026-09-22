@@ -40,6 +40,7 @@ import {
   type River,
 } from "@manhunter/core";
 import type { KeyboardEvent, ReactNode } from "react";
+import { positionIndexOf } from "./mapnodes";
 
 /** What the player has picked on the map. PLAN M5.5 turns one of these into an action target. */
 export type MapSelection =
@@ -185,9 +186,6 @@ const boundsOf = (points: readonly Position[], padding: number): Bounds => {
 
 const viewBoxOf = (bounds: Bounds): string =>
   [bounds.minX, bounds.minY, bounds.width, bounds.height].map(coordinate).join(" ");
-
-const positionIndex = (nodes: readonly MapNode[]): ReadonlyMap<NodeId, Position> =>
-  new Map(nodes.map((node) => [node.id, node.position]));
 
 const exitIndex = (exits: readonly Exit[]): ReadonlyMap<NodeId, ExitKind> =>
   new Map(exits.map((exit) => [exit.nodeId, exit.kind]));
@@ -369,7 +367,7 @@ export const MapRenderer = ({
   theme = DEFAULT_MAP_THEME,
 }: MapRendererProps) => {
   const { map } = view;
-  const positions = positionIndex(map.nodes);
+  const positions = positionIndexOf(map.nodes);
   const exits = exitIndex(map.exits);
   const blockedEdgeIds = blockedEdgeIdsAt(view.hunter.containments, view.clock.turn);
   const selectedNodeId = selection?.kind === "node" ? selection.nodeId : null;
