@@ -34,15 +34,22 @@
  * **`ShareLinkPanel` (PLAN M5.6b-2) renders alongside them**, and `ShareLinkErrorPanel` renders
  * beside `NewHuntForm` instead - a shared link that failed to load leaves `state.hunt` `null`,
  * which is exactly the branch that already shows the form and `DispatchErrorsPanel`.
+ *
+ * **Where each panel sits is decided here; how the regions are laid out is `appframe.tsx`'s**
+ * (PLAN M6.2). The map takes the dominant column, the meters sit above the feed in the intel
+ * column, and the action board, the queue with End Turn, and any dispatch problem share the
+ * command bar - the problems beside the queue whose turn they are about.
  */
 
 import type { HunterActionKind } from "@manhunter/core";
 import { useState } from "react";
 import { acceptsTarget, buildAction, targetOf } from "./actiondraft";
 import { ActionPanel, actionOptionsOf } from "./actionpanel";
+import { AppFrame, ScreenFrame } from "./appframe";
 import { BeliefOverlayPanel } from "./beliefoverlaypanel";
 import { DispatchErrorsPanel } from "./dispatcherrorspanel";
 import { EndScreenPanel } from "./endscreenpanel";
+import { HeaderRailPanel } from "./headerrailpanel";
 import { MapPanel } from "./mappanel";
 import type { MapSelection } from "./maprenderer";
 import { MetersPanel } from "./meterspanel";
@@ -82,39 +89,50 @@ export const DispatchScreen = () => {
 
   if (resources === null)
     return (
-      <>
+      <ScreenFrame>
         <DispatchErrorsPanel />
         <ShareLinkErrorPanel />
         <NewHuntForm />
-      </>
+      </ScreenFrame>
     );
 
   if (outcomeKind !== "in_progress")
     return (
-      <>
+      <ScreenFrame>
         <EndScreenPanel />
         <ReplayScreen />
         <ShareLinkPanel />
-      </>
+      </ScreenFrame>
     );
 
   const target = armed === null ? null : targetOf(armed, selection);
   const draft = armed === null || target === null ? null : buildAction(armed, target);
 
   return (
-    <section aria-label={DISPATCH_LABEL} data-testid={DISPATCH_SCREEN_TEST_ID}>
-      <MapPanel selection={selection} onSelect={select} overlay={<BeliefOverlayPanel />} />
-      <ActionPanel
-        options={actionOptionsOf(balance, resources)}
-        armed={armed}
-        onArm={arm}
-        target={target}
-        draft={draft}
-      />
-      <TurnQueuePanel draft={draft} onCommitted={disarm} />
-      <DispatchErrorsPanel />
-      <MetersPanel />
-      <ReportFeedPanel />
-    </section>
+    <AppFrame
+      label={DISPATCH_LABEL}
+      testId={DISPATCH_SCREEN_TEST_ID}
+      rail={<HeaderRailPanel />}
+      map={<MapPanel selection={selection} onSelect={select} overlay={<BeliefOverlayPanel />} />}
+      intel={
+        <>
+          <MetersPanel />
+          <ReportFeedPanel />
+        </>
+      }
+      command={
+        <>
+          <ActionPanel
+            options={actionOptionsOf(balance, resources)}
+            armed={armed}
+            onArm={arm}
+            target={target}
+            draft={draft}
+          />
+          <TurnQueuePanel draft={draft} onCommitted={disarm} />
+          <DispatchErrorsPanel />
+        </>
+      }
+    />
   );
 };

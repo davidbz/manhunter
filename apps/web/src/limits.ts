@@ -42,4 +42,10 @@ export const LIMITS = {
    * that side refused would cost the player the whole turn instead of one row.
    */
   maxQueuedActions: CORE_LIMITS.maxQueuedActions,
+  /**
+   * Sites `districtCellsOf` will clip cells for (PLAN M6.3). Every cell is clipped against every
+   * other site, so the work is quadratic in this. Reads `core`'s `LIMITS.maxMapNodes` directly:
+   * one site per node, and a map `core` would refuse to generate is one no cell set need cover.
+   */
+  maxDistrictCellSites: CORE_LIMITS.maxMapNodes,
 } as const;
