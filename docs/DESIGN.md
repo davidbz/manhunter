@@ -71,7 +71,7 @@ Generation is seeded. Invalid maps are rejected and regenerated with a derived s
 
 Each action has: AP cost, budget cost, duration, target type (node, edge, district, global), and effects.
 
-**Containment:** roadblock (edge), transit shutdown (line), exit checkpoint (exit), helicopter sweep (area, loud), drone (smaller, quiet), K9 (follows fresh trail).
+**Containment:** roadblock (edge; a criminal who walks into one they did not know about is taken, or slips past — see "End conditions"), transit shutdown (line), exit checkpoint (exit), helicopter sweep (area, loud), drone (smaller, quiet), K9 (follows fresh trail).
 **Intelligence:** canvass (district), pull CCTV (district, returns past), phone triangulation (needs warrant, may be denied), financial monitoring (global, alert on use), informant (may lie), forensics (on found evidence), interview associates (may tip off).
 **Media:** true briefing, fake briefing (misdirection; can be exposed), offer reward (more tips, more pranks), release photo, shelter-in-place.
 **Deployment:** patrol, plainclothes, stakeout (multi-turn), request federal help (more units, less control).
@@ -128,7 +128,8 @@ The hunter view includes a belief distribution over nodes: seeded from confirmed
 
 ## End conditions
 
-- **Win:** capture. Score: turns taken, budget spent, civilian harm, trust remaining. Captured alive becomes a component once an action can use force; no MVP action can, and capture is both sides on one node, so every MVP capture is alive and the bonus would be a constant added to every win.
+- **Win:** capture. The general rule is co-location — both sides standing on one node — and it becomes reachable with the first action that places a hunter unit, all of which are post-MVP. **In the MVP the only way to take the criminal is a roadblock they did not know about:** a checkpoint the criminal walks into either takes them or is slipped past, resolved in the resolution phase alongside the other interactions. A block the criminal already knows about is routed around and never hit, so the win comes from a checkpoint that surprises them, not from one that merely stands there.
+  Score: turns taken, budget spent, civilian harm, trust remaining. Captured alive becomes a component once an action can use force; no MVP action can, so every MVP capture is alive and the bonus would be a constant added to every win.
 - **Lose:** criminal escapes via exit, trust hits 0, or casualties ≥ threshold.
 
 Budget is not an end condition. It is enforced when an action is planned: an action you cannot afford is rejected, so the balance never goes below 0 and running dry costs you the tools to act rather than the case. A bankruptcy loss needs an action billed after the fact (overtime, federal help, standing upkeep on a containment), and those are all post-MVP.

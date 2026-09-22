@@ -84,6 +84,16 @@ describe("the hunt is winnable and losable", () => {
     const perTurn = BALANCE.actions.roadblock.budgetCost * BALANCE.hunter.actionPointsPerTurn;
     expect(perTurn).toBeLessThan(BALANCE.hunter.startingBudget);
   });
+
+  /**
+   * Strictly inside, both ends: a checkpoint nobody can ever slip past makes the hunt a chase to
+   * the first block, and one nobody can ever be taken at leaves the MVP with no win (PLAN M3.11).
+   */
+  it("leaves a checkpoint both a way through and a way to take somebody", () => {
+    expectRate(BALANCE.actions.roadblock.slipPastChance);
+    expect(BALANCE.actions.roadblock.slipPastChance).toBeGreaterThan(RATE_MIN);
+    expect(BALANCE.actions.roadblock.slipPastChance).toBeLessThan(RATE_MAX);
+  });
 });
 
 describe("district table", () => {
@@ -207,23 +217,50 @@ describe("criminal pools", () => {
 });
 
 describe("score weights", () => {
-  it("scores only a capture on the outcome alone", () => {
+  /**
+   * `captured` is the win and `timed_out` the stalemate that stops short of one (PLAN M4.2a); the
+   * three endings that put the criminal beyond reach, or the hunter off the case, score nothing on
+   * the ending alone and are told apart by their components.
+   */
+  const SCORING_ENDINGS: readonly string[] = ["captured", "timed_out"];
+
+  it("scores only a capture and a stalemate on the outcome alone", () => {
     for (const [kind, base] of Object.entries(BALANCE.score.outcomeBase)) {
-      const expected = kind === "captured" ? base > 0 : base === 0;
+      const expected = SCORING_ENDINGS.includes(kind) ? base > 0 : base === 0;
       expect(expected).toBe(true);
     }
   });
 
-  it("makes the worst capture beat the best loss", () => {
+  it("ranks a hunt that ran out of clock below one that was won", () => {
+    const { outcomeBase } = BALANCE.score;
+
+    expect(outcomeBase.timed_out).toBeLessThan(outcomeBase.captured);
+    expect(outcomeBase.timed_out).toBeGreaterThan(outcomeBase.escaped);
+    expect(outcomeBase.timed_out).toBeLessThan(
+      BALANCE.hunter.trustMax * BALANCE.score.trustBonusPerPoint,
+    );
+  });
+
+  /**
+   * Over every ending rather than over `escaped` alone, so a base added to the table - M4.3 tuning
+   * the stalemate, or a future loss given one of its own - cannot land outside the invariant it is
+   * supposed to obey.
+   */
+  it("makes the worst capture beat the best ending short of one", () => {
     const { score, hunter, time, endConditions } = BALANCE;
     const worstCapture =
       score.outcomeBase.captured -
       time.maxTurns * score.turnPenalty -
       hunter.startingBudget * score.budgetPenaltyPerUnit -
       (endConditions.casualtiesToLose - 1) * score.casualtyPenalty;
-    const bestLoss = score.outcomeBase.escaped + hunter.trustMax * score.trustBonusPerPoint;
+    const bestBase = Math.max(
+      ...Object.entries(score.outcomeBase)
+        .filter(([kind]) => kind !== "captured")
+        .map(([, base]) => base),
+    );
+    const bestShortOfACapture = bestBase + hunter.trustMax * score.trustBonusPerPoint;
 
-    expect(worstCapture).toBeGreaterThan(bestLoss);
+    expect(worstCapture).toBeGreaterThan(bestShortOfACapture);
     expect(worstCapture).toBeGreaterThan(score.minimumScore);
   });
 

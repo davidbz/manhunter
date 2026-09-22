@@ -15,7 +15,7 @@ import { LIMITS } from "./limits";
 const START_STAMINA = 100;
 const START_CASH = 250;
 
-const input: Omit<CriminalState, "knowledge" | "trail"> = {
+const input: Omit<CriminalState, "knowledge" | "trail" | "inCustody"> = {
   nodeId: makeNodeId("downtown"),
   travelMode: "foot",
   profile: "amateur",
@@ -32,6 +32,10 @@ describe("makeCriminalState", () => {
 
   it("starts the criminal with nowhere behind it", () => {
     expect(makeCriminalState(input).trail).toEqual([]);
+  });
+
+  it("starts the criminal at large", () => {
+    expect(makeCriminalState(input).inCustody).toBe(false);
   });
 
   it("keeps every measured value it was given", () => {

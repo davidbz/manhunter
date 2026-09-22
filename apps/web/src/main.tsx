@@ -45,6 +45,7 @@ const game = createGameLogic({
 });
 
 const turn = createTurnLogic({
+  rng,
   intel: createIntelLogic({ rng, graph }),
   events: createEventLogic({ rng }),
   belief: createBeliefLogic({ graph }),

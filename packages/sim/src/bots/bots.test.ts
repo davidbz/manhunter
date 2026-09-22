@@ -63,6 +63,7 @@ const generation = createGenerationLogic({
 });
 const game = createGameLogic({ rng, generation });
 const turn = createTurnLogic({
+  rng,
   intel: createIntelLogic({ rng, graph }),
   events: createEventLogic({ rng }),
   belief: createBeliefLogic({ graph }),

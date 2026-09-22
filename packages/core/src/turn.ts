@@ -32,6 +32,7 @@ import type { EdgeId } from "./ids";
 import type { IntelLogic } from "./intel";
 import { LIMITS } from "./limits";
 import type { ReportContent, ReportTruth } from "./report";
+import type { Rng, RngDraw, RngState } from "./rng";
 import { type SealedWorld, seal, unseal } from "./sealed";
 import { makeClock, type Turn } from "./time";
 import { type HunterEvent, toHunterEvents, toHunterView } from "./view";
@@ -102,6 +103,12 @@ export type TurnLogic = {
 };
 
 type TurnDeps = {
+  /**
+   * The loop's own draw, and it has exactly one: whether a checkpoint takes the criminal that
+   * walked into it (`intercepted`). Every other phase draws from the stream through the logic it
+   * is made of, which is why this dep arrived last (PLAN M3.11).
+   */
+  readonly rng: Rng;
   readonly intel: IntelLogic;
   readonly events: EventLogic;
   readonly belief: BeliefLogic;
@@ -239,45 +246,84 @@ const edgeTaken = (
 };
 
 /**
- * The move, against the world as the phase found it. Three ways for it to end: no such edge, so
- * the criminal stays where it is; a checkpoint on it, so the criminal is stopped short and now
- * knows where that checkpoint is; or through, at the cost of the walk.
+ * A criminal walking into a checkpoint nobody told it about: taken, or through by the width of a
+ * hair (DESIGN.md "End conditions"). This is the MVP's only capture, because it is the only thing
+ * a shipped hunter action can do to the criminal's own turn (PLAN M3.11).
  *
- * A stopped criminal keeps its travel mode as well as its node. The move did not happen, and the
- * only thing it leaves behind is the knowledge - which is what makes a roadblock surprise the
- * criminal exactly once (DESIGN.md "Criminal AI": it sees the roadblocks it would plausibly know
- * about, and it meets this one by walking into it).
+ * **Only a block the criminal did not know about can reach this.** A known one is not in the graph
+ * it planned on (`criminalTraversalOf`), so `edgeTaken` never hands that edge back and a checkpoint
+ * the criminal has already met can turn it around but can never take it.
+ *
+ * The draw lives here rather than at the top of the phase, so it is made exactly once per
+ * collision and not at all on the turns - almost all of them - where nobody hits anything.
+ *
+ * Either way the move did not happen, the travel mode is kept, and the block is now known: a
+ * checkpoint surprises the criminal exactly once, and a criminal that slipped through one it now
+ * knows about routes around it from the next turn on.
+ */
+const intercepted = (
+  deps: TurnDeps,
+  criminal: CriminalState,
+  balance: Balance,
+  edgeId: EdgeId,
+  state: RngState,
+): RngDraw<CriminalState> => {
+  const drawn = deps.rng.float(state);
+  const stopped: CriminalState = {
+    ...criminal,
+    knowledge: withKnownRoadblock(criminal.knowledge, edgeId),
+  };
+  if (drawn.value < balance.actions.roadblock.slipPastChance) {
+    return { state: drawn.state, value: stopped };
+  }
+  return { state: drawn.state, value: { ...stopped, inCustody: true } };
+};
+
+/**
+ * The move, against the world as the phase found it. Three ways for it to end: no such edge, so
+ * the criminal stays where it is; through, at the cost of the walk; or a checkpoint on it, which
+ * is the one ending the hunter can cause and is settled by `intercepted`.
  */
 const movedCriminal = (
   deps: TurnDeps,
   world: WorldState,
   balance: Balance,
   move: CriminalMove,
-): CriminalState => {
+  state: RngState,
+): RngDraw<CriminalState> => {
   const edgeId = edgeTaken(deps, world, balance, move);
   if (edgeId === null) {
-    return world.criminal;
+    return { state, value: world.criminal };
   }
-  if (blockedEdgeIdsAt(world.hunter.containments, world.clock.turn).has(edgeId)) {
-    return { ...world.criminal, knowledge: withKnownRoadblock(world.criminal.knowledge, edgeId) };
+  if (!blockedEdgeIdsAt(world.hunter.containments, world.clock.turn).has(edgeId)) {
+    return {
+      state,
+      value: { ...world.criminal, nodeId: move.toNodeId, travelMode: move.travelMode },
+    };
   }
-  return { ...world.criminal, nodeId: move.toNodeId, travelMode: move.travelMode };
+  return intercepted(deps, world.criminal, balance, edgeId, state);
 };
 
 /**
  * Where the criminal is when the turn's dust settles, and how it got there. The trail is appended
  * here and nowhere else, for every action rather than only for a move: it counts turns, not
  * places, so a criminal that hid is a criminal that was somewhere for a turn.
+ *
+ * The stream comes in and goes out because a move can cost a draw and everything else cannot,
+ * which is what keeps a turn with no collision in it drawing exactly what it always drew.
  */
 const resolvedCriminal = (
   deps: TurnDeps,
   world: WorldState,
   balance: Balance,
   action: CriminalAction,
-): CriminalState => {
+  state: RngState,
+): RngDraw<CriminalState> => {
   const settled =
-    action.kind === "move" ? movedCriminal(deps, world, balance, action) : world.criminal;
-  return { ...settled, trail: trailAfter(world.criminal) };
+    action.kind === "move"
+      ? movedCriminal(deps, world, balance, action, state)
+      : { state, value: world.criminal };
+  return { state: settled.state, value: { ...settled.value, trail: trailAfter(world.criminal) } };
 };
 
 /**
@@ -296,12 +342,14 @@ const resolvedCriminal = (
  * the graph the AI searches, so the AI needs no rule about it - while an unknown one stops a move
  * that was made in good faith.
  *
- * Capture is not settled here. DESIGN.md's win is both sides standing on one node, and in the MVP
- * the hunter stands on none: a roadblock is an edge, and no MVP action puts a unit anywhere (PLAN
- * M6 owns the ones that do). So the co-location has one side missing, and writing the test for it
- * would be writing a branch nothing can reach. What this phase owes is the criminal's true final
- * position, which the world carries turn by turn; the rule that reads it is `endconditions.ts`'s,
- * and the Inbox carries the gap where capture would be.
+ * Capture is settled here, and by one rule: a criminal that walks into a checkpoint it did not
+ * know about is taken or slips past (`intercepted`, DESIGN.md "End conditions"). Co-location -
+ * both sides standing on one node - is still the general win and is still unreachable, because no
+ * MVP action puts a hunter unit anywhere (PLAN M6 owns the ones that do). This phase leaves the
+ * fact on the criminal; the rule that reads it and ends the hunt is `endconditions.ts`'s.
+ *
+ * The draw is the only one the loop itself makes, and it is taken from where the criminal's own
+ * chooser left the stream, so the whole phase is one continuous position in it.
  */
 const resolutionPhase = (deps: TurnDeps, world: WorldState, balance: Balance): Resolution => {
   const decision = deps.ai.choose({
@@ -309,12 +357,9 @@ const resolutionPhase = (deps: TurnDeps, world: WorldState, balance: Balance): R
     balance,
     state: world.rng,
   });
+  const settled = resolvedCriminal(deps, world, balance, decision.value, decision.state);
   return {
-    world: {
-      ...world,
-      rng: decision.state,
-      criminal: resolvedCriminal(deps, world, balance, decision.value),
-    },
+    world: { ...world, rng: settled.state, criminal: settled.value },
     action: decision.value,
   };
 };

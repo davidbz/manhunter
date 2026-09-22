@@ -35,6 +35,12 @@ export type CriminalState = {
   readonly cash: number;
   readonly desperation: number;
   readonly knowledge: CriminalKnowledge;
+  /**
+   * Taken at a checkpoint it never saw coming, which is the MVP's only capture (DESIGN.md "End
+   * conditions", PLAN M3.11). It is set by the resolution phase and read by `endconditions.ts`,
+   * so the rule that ends the hunt stays out of the turn loop (architecture rule 6).
+   */
+  readonly inCustody: boolean;
 };
 
 export type CriminalAction =
@@ -48,13 +54,17 @@ export const EMPTY_CRIMINAL_KNOWLEDGE: CriminalKnowledge = {
   heardBriefingTurns: [],
 };
 
-/** A criminal at the start of a hunt: everything measured, nowhere behind it, knowing nothing. */
+/**
+ * A criminal at the start of a hunt: everything measured, nowhere behind it, knowing nothing, and
+ * still at large.
+ */
 export const makeCriminalState = (
-  input: Omit<CriminalState, "knowledge" | "trail">,
+  input: Omit<CriminalState, "knowledge" | "trail" | "inCustody">,
 ): CriminalState => ({
   ...input,
   trail: [],
   knowledge: EMPTY_CRIMINAL_KNOWLEDGE,
+  inCustody: false,
 });
 
 /**

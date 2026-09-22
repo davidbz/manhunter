@@ -14,6 +14,7 @@ import { createGameLogic } from "./game";
 import { createGenerationLogic } from "./generate";
 import { createGraphLogic } from "./graph";
 import {
+  blockedEdgeIdsAt,
   type Containment,
   type HunterAction,
   type HunterActionKind,
@@ -26,7 +27,7 @@ import { type MapEdge, type MapGraph, makeEdge, makeExit, makeNode } from "./map
 import { createMinCutLogic } from "./mincut";
 import { makeReport, type Report } from "./report";
 import { createRiverLogic } from "./river";
-import { createRng } from "./rng";
+import { createRng, type Rng } from "./rng";
 import { seal, unseal } from "./sealed";
 import { makeClock, type Turn } from "./time";
 import { createTopologyLogic } from "./topology";
@@ -233,6 +234,7 @@ const criminalDoing = (chosen: CriminalAction): CriminalAiLogic => ({
 const STANDS_STILL = criminalDoing({ kind: "wait" });
 
 type StepOptions = {
+  readonly rng?: Rng;
   readonly intel?: IntelLogic;
   readonly events?: EventLogic;
   readonly action?: ActionLogic;
@@ -243,6 +245,7 @@ type StepOptions = {
 
 const stepOnce = (world: WorldState, options: StepOptions = {}): TurnResult =>
   createTurnLogic({
+    rng: options.rng ?? rng,
     intel: options.intel ?? NO_INTEL,
     events: options.events ?? NO_EVENTS,
     belief,
@@ -736,6 +739,136 @@ describe("the resolution phase", () => {
   });
 });
 
+const SLIP_CHANCE = BALANCE.actions.roadblock.slipPastChance;
+
+/** Narrower than any gap these tests need either side of the knob. */
+const A_HAIR = 0.000_001;
+
+/**
+ * A stream whose next number is the one a test named, advancing exactly as the real one does.
+ * Only the turn loop's own draw reads it - intel, the event table and the criminal's chooser each
+ * hold an `rng` of their own - so it decides which way an interception went and nothing else.
+ */
+const drawing = (value: number): Rng => ({
+  ...rng,
+  float: (state) => ({ state: rng.float(state).state, value }),
+});
+
+/** Either side of the knob, so the pair is also where the comparison itself is pinned. */
+const SLIPS_PAST = drawing(SLIP_CHANCE - A_HAIR);
+const TAKES_THEM = drawing(SLIP_CHANCE);
+
+const withSlipChance = (chance: number): Balance => ({
+  ...BALANCE,
+  actions: {
+    ...BALANCE.actions,
+    roadblock: { ...BALANCE.actions.roadblock, slipPastChance: chance },
+  },
+});
+
+const CERTAIN_CAPTURE = withSlipChance(0);
+const CERTAIN_SLIP = withSlipChance(1);
+
+/**
+ * PLAN M3.11: the MVP's only capture. A criminal that walks into a checkpoint nobody told it about
+ * is taken or gets through, and a block it already knows about never comes to a draw at all.
+ */
+describe("a checkpoint the criminal did not know about", () => {
+  const walkedInto = (): WorldState => worldAt({ containments: [blockOn(DOWNTOWN_PARK)] });
+
+  it("takes the criminal when the draw goes the hunter's way", () => {
+    const stepped = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, rng: TAKES_THEM });
+
+    expect(stepped.criminal.inCustody).toBe(true);
+    expect(stepped.outcome).toEqual({ kind: "captured", turn: ONE_TURN });
+  });
+
+  it("leaves it at large when the draw goes the criminal's way", () => {
+    const stepped = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, rng: SLIPS_PAST });
+
+    expect(stepped.criminal.inCustody).toBe(false);
+    expect(stepped.outcome).toEqual({ kind: "in_progress" });
+  });
+
+  it("stops the move and teaches it the checkpoint either way", () => {
+    for (const drawn of [TAKES_THEM, SLIPS_PAST]) {
+      const stepped = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, rng: drawn });
+
+      expect(stepped.criminal.nodeId).toBe(downtown);
+      expect(stepped.criminal.knowledge.knownRoadblockEdgeIds).toEqual([DOWNTOWN_PARK]);
+    }
+  });
+
+  /** The chance is the balance the turn was played under, which is what lets PLAN M4.3 sweep it. */
+  it("reads the chance off the balance it was handed", () => {
+    const taken = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, balance: CERTAIN_CAPTURE });
+    const through = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, balance: CERTAIN_SLIP });
+
+    expect(taken.criminal.inCustody).toBe(true);
+    expect(through.criminal.inCustody).toBe(false);
+  });
+
+  /**
+   * Against a chooser that spends nothing, the stream after the turn is the whole record of what
+   * the collision cost: one number, so a second draw or a draw taken before the branch would both
+   * read differently here.
+   */
+  it("draws exactly once for the collision", () => {
+    const world = walkedInto();
+
+    expect(worldAfter(world, { ai: ON_FOOT_TO_PARK }).rng).toEqual(rng.float(world.rng).state);
+  });
+
+  it("draws nothing at all on a turn nobody hit anything", () => {
+    const world = worldAt();
+
+    expect(worldAfter(world, { ai: ON_FOOT_TO_PARK }).rng).toEqual(world.rng);
+  });
+
+  /**
+   * The whole mechanic (PLAN M3.11): a known block is out of the graph the AI searches, so the
+   * criminal never proposes crossing it and the draw is never reached. Run against the real
+   * chooser with a stream that would take the criminal every time, so what keeps it at large is
+   * the routing and not the luck.
+   */
+  it("can never take a criminal that already knew the block was there", () => {
+    const world = worldAt({
+      criminal: { knowledge: { knownRoadblockEdgeIds: [DOWNTOWN_PARK], heardBriefingTurns: [] } },
+      containments: [blockOn(DOWNTOWN_PARK)],
+    });
+
+    const stepped = worldAfter(world, { ai, balance: CERTAIN_CAPTURE });
+
+    expect(stepped.criminal.inCustody).toBe(false);
+    expect(stepped.outcome).toEqual({ kind: "in_progress" });
+  });
+
+  it("takes nobody at a checkpoint that has expired", () => {
+    const lifted: Containment = { kind: "roadblock", edgeId: DOWNTOWN_PARK, expiresAt: FIRST_TURN };
+    const world = worldAt({ containments: [lifted] });
+
+    const stepped = worldAfter(world, { ai: ON_FOOT_TO_PARK, balance: CERTAIN_CAPTURE });
+
+    expect(stepped.criminal.inCustody).toBe(false);
+    expect(stepped.criminal.nodeId).toBe(park);
+  });
+
+  it("takes nobody on a route that went nowhere near a checkpoint", () => {
+    const world = worldAt({ containments: [blockOn(PARK_TERMINAL)] });
+
+    const stepped = worldAfter(world, { ai: ON_FOOT_TO_PARK, balance: CERTAIN_CAPTURE });
+
+    expect(stepped.criminal.inCustody).toBe(false);
+    expect(stepped.criminal.nodeId).toBe(park);
+  });
+
+  it("refuses another turn once the criminal is in custody", () => {
+    const taken = worldAfter(walkedInto(), { ai: ON_FOOT_TO_PARK, rng: TAKES_THEM });
+
+    expect(stepOnce(taken)).toEqual({ kind: "hunt_over", outcome: taken.outcome });
+  });
+});
+
 describe("resolution is simultaneous, not a running order", () => {
   it("shows the criminal the world as the phase found it, not one it has already changed", () => {
     const seen: CriminalSituation[] = [];
@@ -1111,6 +1244,7 @@ describe("a hunt that is already over", () => {
   it("is a fixed point: the same refusal however many times it is asked", () => {
     const over = seal(finished());
     const once = createTurnLogic({
+      rng,
       intel: NO_INTEL,
       events: NO_EVENTS,
       belief,
@@ -1142,6 +1276,7 @@ const generation = createGenerationLogic({
 });
 const game = createGameLogic({ rng, generation });
 const turn = createTurnLogic({
+  rng,
   intel: createIntelLogic({ rng, graph }),
   events: createEventLogic({ rng }),
   belief,
@@ -1159,8 +1294,17 @@ const SETUP: GameSetup = {
 /** Hard-coded rather than drawn, so a failure names the hunt that failed (PLAN M3.6's rule). */
 const ESCAPE_SEEDS: readonly number[] = [1, 2, 3, 7, 11, 101, 4242];
 
-const startedAt = (seed: number): WorldState => {
-  const result = game.create({ setup: SETUP, seed, balance: BALANCE });
+/**
+ * A deadline no criminal can beat, which is what makes the clock the only thing that can end the
+ * hunts below. Generation refuses a map whose start is adjacent to an exit (DESIGN.md "Generation
+ * validity"), so one turn is provably too few; measured, the quickest escape across
+ * `ESCAPE_SEEDS` is turn 4, and the quickest over a 2000-seed sweep is turn 3.
+ */
+const SHORT_DEADLINE = 2;
+const SHORT_SETUP: GameSetup = { ...SETUP, maxTurns: SHORT_DEADLINE };
+
+const startedAt = (seed: number, setup: GameSetup = SETUP): WorldState => {
+  const result = game.create({ setup, seed, balance: BALANCE });
   if (result.kind !== "game") {
     throw new Error(`expected a game, got ${result.kind}`);
   }
@@ -1182,8 +1326,9 @@ const playThrough = (
   seed: number,
   limit: number,
   actions: readonly HunterAction[] = [],
+  setup: GameSetup = SETUP,
 ): Played => {
-  let world = seal(startedAt(seed));
+  let world = seal(startedAt(seed, setup));
   for (let taken = 0; taken < limit; taken += 1) {
     const result = turn.step({ world, actions, balance: BALANCE });
     if (result.kind === "hunt_over") {
@@ -1196,6 +1341,54 @@ const playThrough = (
 
 const play = (seed: number, turns: number, actions: readonly HunterAction[] = []): WorldState =>
   playThrough(seed, turns, actions).world;
+
+/**
+ * A hunter that knows exactly where the criminal is standing and closes the roads out of it. No
+ * real hunter can do this and no `HunterView` would let one try (architecture rule 4); it is the
+ * shortest way to drive a whole generated hunt into the capture, and what the tests under it pin
+ * is that the ending is reachable in play, not that anybody could play this well.
+ */
+const blockadeAround = (world: WorldState): readonly HunterAction[] => {
+  const standing = blockedEdgeIdsAt(world.hunter.containments, world.clock.turn);
+  return world.map.edges
+    .filter((edge) => edge.from === world.criminal.nodeId || edge.to === world.criminal.nodeId)
+    .filter((edge) => BALANCE.edges[edge.kind].blockable && !standing.has(edge.id))
+    .slice(0, BALANCE.hunter.actionPointsPerTurn)
+    .map((edge) => ({ kind: "roadblock", edgeId: edge.id }));
+};
+
+/**
+ * Two of `ESCAPE_SEEDS`, named apart because closing the corridor ends them differently and both
+ * endings are worth a test of their own (PLAN M4.3). Neither was searched for: `TAKEN_SEED` is the
+ * first entry in the list and `CONTAINED_SEED` is the seed the rest of this file already runs.
+ */
+const TAKEN_SEED = 1;
+const CONTAINED_SEED = SEED;
+
+/**
+ * Half of the seeds, rounded up. It is the floor `packages/sim/src/balance.slow.test.ts` asserts
+ * over 400 hunts - a hunter working the criminal's route takes at least half of them - applied to
+ * the seven named here, and the blockader below is better informed than the bot that floor was
+ * measured on. Not seven of seven: see the test that uses it.
+ */
+const TAKEN_AT_LEAST = Math.ceil(ESCAPE_SEEDS.length / 2);
+
+/** `playThrough`, with a queue rebuilt each turn from where the criminal has got to. */
+const playBlockading = (seed: number, limit: number): Played => {
+  let world = seal(startedAt(seed));
+  for (let taken = 0; taken < limit; taken += 1) {
+    const result = turn.step({
+      world,
+      actions: blockadeAround(unseal(world)),
+      balance: BALANCE,
+    });
+    if (result.kind === "hunt_over") {
+      return { world: unseal(world), turns: taken };
+    }
+    world = turnOf(result).world;
+  }
+  return { world: unseal(world), turns: limit };
+};
 
 describe("a hunt wired the way the app wires it", () => {
   it("draws the same turn twice from the same world", () => {
@@ -1271,12 +1464,95 @@ describe("a hunt wired the way the app wires it", () => {
     );
   });
 
+  /**
+   * The AC's "a test that reaches it" for the capture, through a whole hunt on a generated map
+   * (PLAN M3.11): the MVP's only win, and the only ending that needs the hunter to have played.
+   */
+  it("ends a hunt the hunter works the checkpoints in, with the criminal taken", () => {
+    const played = playBlockading(TAKEN_SEED, MAX_TURNS);
+
+    expect(played.world.outcome).toEqual({ kind: "captured", turn: played.turns });
+    expect(played.world.criminal.inCustody).toBe(true);
+  });
+
+  /**
+   * The other thing closing the corridor does, and the reason the test above names one seed rather
+   * than running the list (PLAN M4.3). A hunter who has the criminal surrounded is not owed the
+   * capture: the checkpoint is a draw per surprise, so a hunt can be one the criminal never gets
+   * out of and still one the clock ends. This is the stalemate `outcomeBase.timed_out` prices,
+   * reached by a hunter who played rather than by running a two-turn deadline out.
+   */
+  it("holds a criminal it cannot take until the deadline runs out", () => {
+    const played = playBlockading(CONTAINED_SEED, MAX_TURNS);
+
+    expect(played.turns).toBe(MAX_TURNS);
+    expect(played.world.outcome).toEqual({ kind: "timed_out", turn: MAX_TURNS });
+    expect(played.world.criminal.inCustody).toBe(false);
+    expect(played.world.map.exits.map((exit) => exit.nodeId)).not.toContain(
+      played.world.criminal.nodeId,
+    );
+  });
+
+  /**
+   * What closing the roads is worth over every seed a passive hunter loses by the exit. Two claims,
+   * and deliberately not a third. **No criminal walks out past a closed corridor**, which held on
+   * all seven at every slip chance measured from 0 to 0.9, and over 200 seeds costs the blockader
+   * one escape whatever the knob is set to. **At least half are taken**, which is the balance's own
+   * floor (`TAKEN_AT_LEAST`).
+   *
+   * It is *not* seven captures out of seven, and it was not a claim at the old 0.6 either: an
+   * omniscient blockader takes 83% of 200 seeds at 0.6 and 69% at the shipped 0.7, so seven for
+   * seven was these seven hunts agreeing at one setting, not something the balance promised (PLAN
+   * M4.3). The seed that stopped agreeing did not let the criminal go - it is `CONTAINED_SEED`
+   * above, held for the full deadline, and it has a test of its own rather than a band to hide in.
+   */
+  it("stops the escape on every seed the passive hunter loses, and takes most of them", () => {
+    const outcomes = ESCAPE_SEEDS.map((seed) => playBlockading(seed, MAX_TURNS).world.outcome);
+    const taken = outcomes.filter((outcome) => outcome.kind === "captured");
+
+    for (const outcome of outcomes) {
+      expect(outcome.kind).not.toBe("escaped");
+    }
+    expect(taken.length).toBeGreaterThanOrEqual(TAKEN_AT_LEAST);
+  });
+
+  it("plays the same blockaded hunt twice from the same seed", () => {
+    expect(JSON.stringify(playBlockading(SEED, MAX_TURNS))).toBe(
+      JSON.stringify(playBlockading(SEED, MAX_TURNS)),
+    );
+  });
+
   it("ends every hunt it is given, well inside the deadline", () => {
     for (const seed of ESCAPE_SEEDS) {
       const played = playThrough(seed, MAX_TURNS);
 
       expect(played.world.outcome).toMatchObject({ kind: "escaped" });
       expect(played.turns).toBeLessThan(MAX_TURNS);
+    }
+  });
+
+  /**
+   * The AC's "a test that reaches it" for the deadline, through a whole hunt on a generated map
+   * rather than a hand-built one (PLAN M4.2a). Nothing else can end these hunts: the criminal
+   * cannot reach an exit in two turns, a passive hunter spends no trust, and two turns cannot
+   * reach the casualty threshold.
+   */
+  it("ends a hunt whose deadline runs out with the criminal still loose", () => {
+    const played = playThrough(SEED, MAX_TURNS, [], SHORT_SETUP);
+
+    expect(played.turns).toBe(SHORT_DEADLINE);
+    expect(played.world.outcome).toEqual({ kind: "timed_out", turn: SHORT_DEADLINE });
+    expect(played.world.map.exits.map((exit) => exit.nodeId)).not.toContain(
+      played.world.criminal.nodeId,
+    );
+  });
+
+  it("gives every hunt exactly the turns its own setup named, not the balance's", () => {
+    for (const seed of ESCAPE_SEEDS) {
+      const played = playThrough(seed, MAX_TURNS, [], SHORT_SETUP);
+
+      expect(played.turns).toBe(SHORT_DEADLINE);
+      expect(played.world.outcome).toEqual({ kind: "timed_out", turn: SHORT_DEADLINE });
     }
   });
 

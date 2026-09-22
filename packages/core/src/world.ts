@@ -26,13 +26,21 @@ import type { Clock, Turn } from "./time";
  * There is no bankruptcy variant: budget is enforced when an action is planned, so it never goes
  * below 0 and the condition could not be reached. Reintroducing it needs an action billed after
  * the fact, which is post-MVP (PLAN "Decisions").
+ *
+ * **Declaration order is precedence order** (`endconditions.ts`): when two endings hold on the
+ * same turn, the earlier variant names the hunt. `timed_out` is last because it is the ending
+ * that holds when nothing else did - a criminal who reaches an exit on the final turn escaped,
+ * and a hunter who loses the last of the public's trust on it was removed from the case; neither
+ * ran out of clock. `captured` leads for the mirror reason: a capture on the final turn is a win.
  */
 export type GameOutcome =
   | { readonly kind: "in_progress" }
   | { readonly kind: "captured"; readonly turn: Turn }
   | { readonly kind: "escaped"; readonly turn: Turn }
   | { readonly kind: "trust_collapsed"; readonly turn: Turn }
-  | { readonly kind: "casualties_exceeded"; readonly turn: Turn };
+  | { readonly kind: "casualties_exceeded"; readonly turn: Turn }
+  /** The deadline in `GameConfig.maxTurns` passed with the criminal still loose in the city. */
+  | { readonly kind: "timed_out"; readonly turn: Turn };
 
 export type WorldState = {
   readonly config: GameConfig;
