@@ -13,9 +13,16 @@
  * is parsed (AGENTS.md section 5). Over the bound is a refusal with a reason, never a truncation,
  * and the field carries no `maxLength`: a bound the browser silently enforces is a refusal nobody
  * can reach and no test can mean anything about.
+ *
+ * **A real `<form onSubmit>`, closing the standing Inbox item (PLAN M5.7).** The element itself
+ * was already a `<section>` holding a text field, a select and a button with no keyboard path to
+ * either; it is a `<form>` now and the button is `type="submit"`, which is a swap in element and
+ * attribute, not a restructuring - `submit` already existed and is unchanged, so Enter in the
+ * seed field now reaches it the way clicking Start always did.
  */
 
 import type { Difficulty, GameSetup } from "@manhunter/core";
+import type { FormEvent } from "react";
 import { useState } from "react";
 import { LIMITS } from "./limits";
 import { useGameStore } from "./storecontext";
@@ -122,8 +129,13 @@ export const NewHuntForm = () => {
     start({ setup, seed: parsed.seed });
   };
 
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submit();
+  };
+
   return (
-    <section aria-label={FORM_LABEL} data-testid={NEW_HUNT_TEST_ID}>
+    <form aria-label={FORM_LABEL} data-testid={NEW_HUNT_TEST_ID} onSubmit={onSubmit}>
       <label htmlFor={SEED_INPUT_ID}>{SEED_LABEL}</label>
       <input
         id={SEED_INPUT_ID}
@@ -151,14 +163,9 @@ export const NewHuntForm = () => {
           {seedRefusalMessage(parsed)}
         </p>
       )}
-      <button
-        type="button"
-        data-testid={NEW_HUNT_START_TEST_ID}
-        disabled={parsed.kind !== "seed"}
-        onClick={submit}
-      >
+      <button type="submit" data-testid={NEW_HUNT_START_TEST_ID} disabled={parsed.kind !== "seed"}>
         {START_LABEL}
       </button>
-    </section>
+    </form>
   );
 };

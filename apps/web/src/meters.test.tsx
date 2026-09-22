@@ -154,6 +154,13 @@ describe("the meters", () => {
     expect(labels).toEqual(METER_KINDS.map((kind) => METER_LABELS[kind]));
   });
 
+  it("tints the native meter with the dispatch accent colour (PLAN M5.7)", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} />);
+
+    const meter = container?.querySelector('[data-testid="meter"][data-meter="trust"] meter');
+    expect((meter as HTMLElement | null)?.style.accentColor).toBe("rgb(95, 212, 255)");
+  });
+
   it("survives a hunt whose clock has run out, where the range has no span", () => {
     const meters = metersOf(viewWith({ turn: 0, turnsRemaining: 0 }), BOUNDS);
     const clock = meters.find((meter) => meter.kind === "clock");

@@ -11,8 +11,10 @@ import {
   createGraphLogic,
   createIntelLogic,
   createMinCutLogic,
+  createPlaybackLogic,
   createRiverLogic,
   createRng,
+  createScoringLogic,
   createTopologyLogic,
   createTurnLogic,
   createValidatorLogic,
@@ -56,6 +58,9 @@ const turn: TurnLogic = createTurnLogic({
   ai: createCriminalAiLogic({ rng, graph }),
   graph,
 });
+
+const scoring = createScoringLogic();
+const playback = createPlaybackLogic({ game, turn });
 
 const SETUP: GameSetup = {
   map: { columns: 8, rows: 6, exitCount: 3 },
@@ -107,7 +112,7 @@ afterEach(async () => {
 
 describe("a component reading the store", () => {
   it("renders nothing about a hunt that has not started", async () => {
-    const store = createGameStore({ game, turn }, BALANCE);
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
 
     await render(store, <Dispatch />);
 
@@ -115,7 +120,7 @@ describe("a component reading the store", () => {
   });
 
   it("renders the view once a hunt is dispatched, and again when a turn is played", async () => {
-    const store = createGameStore({ game, turn }, BALANCE);
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
     await render(store, <Dispatch />);
 
     await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));

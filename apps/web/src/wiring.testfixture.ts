@@ -22,8 +22,10 @@ import {
   createGraphLogic,
   createIntelLogic,
   createMinCutLogic,
+  createPlaybackLogic,
   createRiverLogic,
   createRng,
+  createScoringLogic,
   createTopologyLogic,
   createTurnLogic,
   createValidatorLogic,
@@ -33,24 +35,30 @@ import type { GameStoreDeps } from "./gamestore";
 const rng = createRng();
 const graph = createGraphLogic();
 
+const game = createGameLogic({
+  rng,
+  generation: createGenerationLogic({
+    rng,
+    topology: createTopologyLogic({ rng, graph }),
+    river: createRiverLogic({ rng, graph }),
+    districts: createDistrictLogic({ rng, graph }),
+    validator: createValidatorLogic({ graph, minCut: createMinCutLogic({ graph }) }),
+  }),
+});
+
+const turn = createTurnLogic({
+  rng,
+  intel: createIntelLogic({ rng, graph }),
+  events: createEventLogic({ rng }),
+  belief: createBeliefLogic({ graph }),
+  action: createActionLogic({ rng }),
+  ai: createCriminalAiLogic({ rng, graph }),
+  graph,
+});
+
 export const TEST_GAME_DEPS: GameStoreDeps = {
-  game: createGameLogic({
-    rng,
-    generation: createGenerationLogic({
-      rng,
-      topology: createTopologyLogic({ rng, graph }),
-      river: createRiverLogic({ rng, graph }),
-      districts: createDistrictLogic({ rng, graph }),
-      validator: createValidatorLogic({ graph, minCut: createMinCutLogic({ graph }) }),
-    }),
-  }),
-  turn: createTurnLogic({
-    rng,
-    intel: createIntelLogic({ rng, graph }),
-    events: createEventLogic({ rng }),
-    belief: createBeliefLogic({ graph }),
-    action: createActionLogic({ rng }),
-    ai: createCriminalAiLogic({ rng, graph }),
-    graph,
-  }),
+  game,
+  turn,
+  scoring: createScoringLogic(),
+  playback: createPlaybackLogic({ game, turn }),
 };

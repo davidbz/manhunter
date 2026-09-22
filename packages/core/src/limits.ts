@@ -76,9 +76,10 @@ export const LIMITS = {
    * The bound is set from the worst hunt that can legitimately exist instead: the deadline cap
    * of `maxGameTurns` turns, on the largest grid `maxMapNodes` allows, with every turn's action
    * points spent on the longest ids that grid can produce, is 7946 characters. 8192 clears that
-   * with room and is the same number `apps/web/src/limits.ts` already carries, which matters
-   * because the two bound the same string at two boundaries (PLAN M5.6b) and a share link that
-   * one accepts and the other refuses is a dead link.
+   * with room. `LIMITS` is exported from `@manhunter/core` (PLAN M5.6b-2) and `apps/web/src/
+   * limits.ts` reads this field rather than carrying its own copy, so the two boundaries this
+   * bounds - a hostile URL in `web`, a malformed replay here - cannot drift apart and turn a
+   * share link one side accepts into one the other refuses.
    * It is not a bound on queue length: 240 turns of 32 actions is 84506 characters and is
    * refused, which is correct - `maxQueuedActions` is an order of magnitude over what a turn can
    * spend, so such a hunt cannot be played, only fabricated.

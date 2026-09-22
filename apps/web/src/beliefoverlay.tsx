@@ -22,8 +22,8 @@
  * "Testing expectations": do not snapshot-test the SVG).
  *
  * Colours and measurements are one table passed in rather than captured, the way
- * `DEFAULT_MAP_THEME` is. PLAN M5.7 lifts the ramp into `theme.ts`; until then this is the one
- * place in the overlay a colour appears.
+ * `DEFAULT_MAP_THEME` is. The values are `theme.ts`'s `HEAT_RAMP` (PLAN M5.7); this file keeps
+ * only the type, which is the overlay's own contract.
  */
 
 import {
@@ -34,6 +34,8 @@ import {
   type NodeId,
   type Position,
 } from "@manhunter/core";
+import { positionIndexOf } from "./mapnodes";
+import { HEAT_RAMP } from "./theme";
 
 /** How a normalised belief mass is turned into a blob. Both ends are drawn, neither is a default. */
 export type HeatRamp = {
@@ -44,14 +46,8 @@ export type HeatRamp = {
   readonly maxOpacity: number;
 };
 
-/** The red of DESIGN.md "Visual direction", shared with the incident marker. PLAN M5.7 owns it. */
-export const DEFAULT_HEAT_RAMP: HeatRamp = {
-  fill: "#e8483f",
-  minRadius: 5,
-  maxRadius: 18,
-  minOpacity: 0.06,
-  maxOpacity: 0.55,
-};
+/** The red of DESIGN.md "Visual direction", shared with the incident marker, from `theme.ts`. */
+export const DEFAULT_HEAT_RAMP: HeatRamp = HEAT_RAMP;
 
 /** One node's worth of heat, ready to draw. `intensity` is the mass as a fraction of the peak. */
 export type Heat = {
@@ -110,9 +106,6 @@ export const heatOf = (ramp: HeatRamp, mass: number, peak: number): Heat | null 
 export const peakBeliefMass = (cells: readonly BeliefCell[]): number =>
   cells.reduce((peak, cell) => Math.max(peak, cell.mass), NO_HEAT);
 
-const positionsOf = (nodes: readonly MapNode[]): ReadonlyMap<NodeId, Position> =>
-  new Map(nodes.map((node) => [node.id, node.position]));
-
 type PlacedCell = {
   readonly cell: BeliefCell;
   readonly position: Position;
@@ -138,7 +131,7 @@ export const beliefHeatOf = (
   nodes: readonly MapNode[],
   ramp: HeatRamp,
 ): readonly BeliefHeat[] => {
-  const placed = placedCells(belief, positionsOf(nodes));
+  const placed = placedCells(belief, positionIndexOf(nodes));
   const peak = peakBeliefMass(placed.map((each) => each.cell));
 
   return placed.flatMap(({ cell, position }) => {
