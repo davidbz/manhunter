@@ -20,6 +20,7 @@
  */
 
 import type { DistrictType, EdgeKind } from "@manhunter/core";
+import type { AvatarTheme } from "./avatarportrait";
 import type { HeatRamp } from "./beliefoverlay";
 import type { CriminalPathTheme } from "./criminalpath";
 import type { MapEdgeStyle, MapTheme } from "./maprenderer";
@@ -76,6 +77,15 @@ export const PALETTE = {
   industrial: "#b58a5a",
   park: "#4f9a6a",
   transitHub: "#c07fc0",
+
+  /**
+   * Avatar skin tones, greyed toward the surface ramp so a face never out-shouts the map. They are
+   * the only non-map hues outside the discipline above, and they are deliberately desaturated.
+   */
+  skinPale: "#c2ab9c",
+  skinWarm: "#a08674",
+  skinTan: "#7c6556",
+  skinDeep: "#54453c",
 } as const;
 
 /**
@@ -151,6 +161,22 @@ export const MOTION = {
 } as const;
 
 /**
+ * The operations-board frame's geometry (PLAN M6.2). The map is the hero (DESIGN.md), so it gets
+ * whatever is left once the rail, the intel column and the command bar have taken their share;
+ * these are the shares. The intel column and the command bar are clamped rather than fixed so the
+ * map keeps the dominant column from 1280x800 up to 1920x1080 without either panel starving.
+ *
+ * `frameHeight` is `dvh` rather than `vh` so a browser's collapsing toolbar cannot push the
+ * command bar, and End Turn with it, below the fold.
+ */
+export const LAYOUT = {
+  frameHeight: "100dvh",
+  intelWidth: "clamp(18rem, 24vw, 28rem)",
+  commandMaxHeight: "clamp(10rem, 32dvh, 20rem)",
+  commandColumnMin: "14rem",
+} as const;
+
+/**
  * The groups that become CSS custom properties, keyed by the prefix each group takes. Every value
  * is a string, because a custom property is a string; the numeric tokens below (`STROKE`,
  * `MAP_THEME`) are SVG attributes read from TypeScript and are deliberately not in here.
@@ -162,6 +188,7 @@ export const DESIGN_TOKENS = {
   radius: RADIUS,
   shadow: SHADOW,
   motion: MOTION,
+  layout: LAYOUT,
 } as const;
 
 export type DesignTokens = typeof DESIGN_TOKENS;
@@ -246,4 +273,28 @@ export const CRIMINAL_PATH_THEME: CriminalPathTheme = {
   markerStroke: PALETTE.nodeStroke,
   markerStrokeWidth: STROKE.base,
   markerRadius: 7,
+};
+
+/**
+ * The avatars' palette (PLAN M6.7), one ramp per `AvatarRamp`, each exactly as long as
+ * `avatar.ts`'s `AVATAR_TONE_COUNTS` says. Clothing is drawn from the surface and edge ramp so a
+ * portrait stays a panel element; the one saturated tone is the criminal's `mark`, which is
+ * `incidentRed` because red is the criminal. The redacted figure is flat surface grey with a
+ * darker band, so the unknown suspect reads as a gap in the file rather than as a face.
+ */
+export const AVATAR_THEME: AvatarTheme = {
+  ramps: {
+    skin: [PALETTE.skinPale, PALETTE.skinWarm, PALETTE.skinTan, PALETTE.skinDeep],
+    garment: [PALETTE.edgeStrong, PALETTE.road, PALETTE.edgeHairline, PALETTE.textDim],
+    headwear: [PALETTE.edgeStrong, PALETTE.textDim, PALETTE.road],
+    mask: [PALETTE.textDim, PALETTE.road, PALETTE.textMuted],
+    mark: [PALETTE.incidentRed],
+    eyes: [PALETTE.surfaceSunken],
+    redacted: [PALETTE.edgeHairline, PALETTE.surfaceSunken, PALETTE.textDim],
+  },
+  plate: PALETTE.surfaceSunken,
+  plateEdge: PALETTE.edgeStrong,
+  plateEdgeWidth: STROKE.hairline,
+  portraitSize: 96,
+  thumbnailSize: 32,
 };

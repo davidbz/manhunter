@@ -79,7 +79,7 @@ const ON_THE_HOUR = ":00";
 
 const NONE = 0;
 
-const hourLabel = (hour: Hour): string =>
+export const hourLabel = (hour: Hour): string =>
   `${String(hour).padStart(HOUR_DIGITS, HOUR_PAD)}${ON_THE_HOUR}`;
 
 const outOf = (value: number, maximum: number): string => `${value}${OF_SEPARATOR}${maximum}`;

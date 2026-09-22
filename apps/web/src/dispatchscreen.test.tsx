@@ -4,6 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { ACTION_DRAFT_TEST_ID, ACTION_OPTION_TEST_ID, ACTION_PANEL_TEST_ID } from "./actionpanel";
 import {
+  APP_FRAME_COMMAND_TEST_ID,
+  APP_FRAME_INTEL_TEST_ID,
+  APP_FRAME_MAP_TEST_ID,
+  APP_FRAME_RAIL_TEST_ID,
+} from "./appframe";
+import {
   DISPATCH_ERRORS_TEST_ID,
   DISPATCH_REFUSAL_TEST_ID,
   DISPATCH_REJECTION_TEST_ID,
@@ -11,6 +17,7 @@ import {
 import { DISPATCH_SCREEN_TEST_ID, DispatchScreen } from "./dispatchscreen";
 import { END_SCREEN_OUTCOME_TEST_ID, END_SCREEN_TEST_ID } from "./endscreen";
 import { createGameStore, type GameStore } from "./gamestore";
+import { HEADER_RAIL_TEST_ID } from "./headerrail";
 import { LIMITS } from "./limits";
 import { MAP_EDGE_TEST_ID, MAP_NODE_TEST_ID, MAP_TEST_ID } from "./maprenderer";
 import { METERS_TEST_ID } from "./meters";
@@ -130,6 +137,31 @@ describe("the dispatch screen", () => {
     for (const testId of [MAP_TEST_ID, ACTION_PANEL_TEST_ID, METERS_TEST_ID, REPORT_FEED_TEST_ID]) {
       expect(find(testId)).not.toBeNull();
     }
+  });
+
+  it("lays the panels out in the frame's regions (PLAN M6.2)", async () => {
+    await started();
+
+    const inRegion = (region: string, testId: string): boolean =>
+      find(region)?.contains(find(testId)) ?? false;
+
+    expect(inRegion(APP_FRAME_RAIL_TEST_ID, HEADER_RAIL_TEST_ID)).toBe(true);
+    expect(inRegion(APP_FRAME_MAP_TEST_ID, MAP_TEST_ID)).toBe(true);
+    expect(inRegion(APP_FRAME_INTEL_TEST_ID, METERS_TEST_ID)).toBe(true);
+    expect(inRegion(APP_FRAME_INTEL_TEST_ID, REPORT_FEED_TEST_ID)).toBe(true);
+    expect(inRegion(APP_FRAME_COMMAND_TEST_ID, ACTION_PANEL_TEST_ID)).toBe(true);
+    expect(inRegion(APP_FRAME_COMMAND_TEST_ID, END_TURN_TEST_ID)).toBe(true);
+  });
+
+  it("puts the meters above the feed in the intel column", async () => {
+    await started();
+
+    const meters = find(METERS_TEST_ID);
+    const feed = find(REPORT_FEED_TEST_ID);
+
+    expect(feed === null ? 0 : meters?.compareDocumentPosition(feed)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("takes a selection of any kind while no action is armed", async () => {

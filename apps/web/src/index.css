@@ -9,8 +9,9 @@
  * file: `tools/theme/colorliterals.test.ts` scans it with no exemption, the way it scans every
  * `.tsx` outside the token file.
  *
- * Layout lives in PLAN M6.2, not here. What this file owns is the reset, the ground the board
- * sits on, the focus treatment, and the reduced-motion guard every later task's animation obeys.
+ * What this file owns is the reset, the ground the board sits on, the screen frame (PLAN M6.2),
+ * the focus treatment, and the reduced-motion guard every later task's animation obeys. Panel
+ * chrome is PLAN M6.8's and the map surface is M6.4's; neither is styled here.
  */
 
 *,
@@ -63,6 +64,140 @@ h2 {
 
 h3 {
   font-size: var(--mh-font-size-large);
+}
+
+/*
+ * The screen frame (PLAN M6.2). The app is exactly one viewport tall and never scrolls as a page:
+ * the title strip takes its height, the screen below takes the rest, and anything taller than its
+ * region scrolls inside that region. `minmax(0, 1fr)` rather than `1fr` throughout, because a
+ * grid track's automatic minimum is its content's size, and a long feed would otherwise grow the
+ * track past the viewport instead of scrolling.
+ */
+.mh-app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: var(--mh-layout-frame-height);
+  overflow: hidden;
+}
+
+.mh-app__title {
+  padding: var(--mh-space-sm) var(--mh-space-lg);
+  background: var(--mh-color-surface-sunken);
+  font-size: var(--mh-font-size-large);
+  box-shadow: var(--mh-shadow-panel);
+}
+
+.mh-screen {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--mh-space-lg);
+}
+
+/*
+ * The operations board. The map is the hero (DESIGN.md), so it takes the one flexible column and
+ * the one flexible row; the intel column and the command bar take clamped shares of what is left.
+ */
+.mh-frame {
+  display: grid;
+  grid-template-areas:
+    "rail rail"
+    "map intel"
+    "command command";
+  grid-template-columns: minmax(0, 1fr) var(--mh-layout-intel-width);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--mh-space-hair);
+  min-height: 0;
+  background: var(--mh-color-surface-sunken);
+}
+
+.mh-frame__rail {
+  grid-area: rail;
+  padding: var(--mh-space-xs) var(--mh-space-lg);
+  background: var(--mh-color-surface-raised);
+  box-shadow: var(--mh-shadow-panel);
+}
+
+/*
+ * The map's sized container. `MapRenderer`'s `<svg>` carries a `viewBox` and no width or height,
+ * so on its own it paints at the browser's 300x150 default; filling this cell and letting the
+ * default `preserveAspectRatio` letterbox it is what makes the city the size of its column.
+ */
+.mh-frame__map {
+  grid-area: map;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mh-color-background);
+}
+
+.mh-frame__map > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mh-frame__intel {
+  grid-area: intel;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-md);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--mh-space-md);
+  background: var(--mh-color-surface-raised);
+}
+
+/*
+ * The action board takes the widest share because it is the densest panel; the queue with End
+ * Turn and, when there is one, the dispatch-problems panel each take an equal column after it.
+ * Each child scrolls on its own, so a long queue never pushes End Turn off the bar.
+ */
+.mh-frame__command {
+  grid-area: command;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(var(--mh-layout-command-column-min), 1fr);
+  gap: var(--mh-space-md);
+  max-height: var(--mh-layout-command-max-height);
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--mh-space-md);
+  background: var(--mh-color-surface-raised);
+  box-shadow: var(--mh-shadow-panel);
+}
+
+.mh-frame__command > * {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.mh-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mh-space-xl);
+  margin: 0;
+}
+
+.mh-rail__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mh-space-sm);
+}
+
+.mh-rail__label {
+  color: var(--mh-color-text-muted);
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-xs);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-rail__value {
+  margin: 0;
+  font-weight: var(--mh-font-weight-bold);
 }
 
 ::selection {
