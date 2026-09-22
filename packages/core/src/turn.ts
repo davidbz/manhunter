@@ -345,7 +345,7 @@ const resolvedCriminal = (
  * Capture is settled here, and by one rule: a criminal that walks into a checkpoint it did not
  * know about is taken or slips past (`intercepted`, DESIGN.md "End conditions"). Co-location -
  * both sides standing on one node - is still the general win and is still unreachable, because no
- * MVP action puts a hunter unit anywhere (PLAN M6 owns the ones that do). This phase leaves the
+ * MVP action puts a hunter unit anywhere (PLAN M7 owns the ones that do). This phase leaves the
  * fact on the criminal; the rule that reads it and ends the hunt is `endconditions.ts`'s.
  *
  * The draw is the only one the loop itself makes, and it is taken from where the criminal's own
@@ -370,7 +370,7 @@ const harmedThisTurn = (fired: readonly GameEvent[]): number =>
 
 /**
  * Political pressure rises with the clock and jumps when somebody is hurt (DESIGN.md "Hunter
- * resources"). Nothing reads it in the MVP - the override events it would trigger are PLAN M6 -
+ * resources"). Nothing reads it in the MVP - the override events it would trigger are PLAN M7 -
  * so it exists to be shown, and it is deliberately not a score component, because it tracks turns
  * taken and PLAN M3.10 already scores those.
  *

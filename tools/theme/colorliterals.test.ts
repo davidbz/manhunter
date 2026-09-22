@@ -27,6 +27,17 @@
  * keyword list broad enough to catch them would also catch ordinary words in prose comments,
  * trading false negatives on a pattern nobody writes for false positives on every doc comment.
  *
+ * **`.css` is scanned too, and with no token-file exemption at all** (PLAN M6.1). M5.7 declined to
+ * add a stylesheet on the grounds that it would be a palette copy this test could not see, so the
+ * stylesheet M6.1 does add is written entirely in `var(--mh-*)` references whose values come from
+ * `theme.ts` through `cssvariables.ts`. Scanning `index.css` is what holds that arrangement in
+ * place: a colour written directly into a CSS rule is the exact regression the M5.7 note feared.
+ *
+ * **The functional list covers the modern colour spaces as well** (`oklch()`, `oklab()`, `lch()`,
+ * `lab()`, `hwb()`, `color()`, `color-mix()`). The two original patterns were written against what
+ * the tree contained, and a visual overhaul reaching for `oklch()` - the natural choice for a
+ * perceptual ramp - would otherwise have walked straight past the guard.
+ *
  * **Test files are excluded from the scan.** The AC's concern is production code scattering the
  * palette `theme.ts` exists to centralise; a fixture literal inside a test tests string-matching,
  * not the theme, the same way `newhuntform.test.tsx` hardcodes seed digits and `limits.test.ts`
@@ -42,11 +53,12 @@ import { describe, expect, it } from "vitest";
 
 const WEB_SRC_DIR = fileURLToPath(new URL("../../apps/web/src/", import.meta.url));
 const TOKEN_FILE = "theme.ts";
-const SOURCE_EXTENSIONS = [".ts", ".tsx"];
+const STYLESHEET_EXTENSION = ".css";
+const SOURCE_EXTENSIONS = [".ts", ".tsx", STYLESHEET_EXTENSION];
 const TEST_FILE_SUFFIXES = [".test.ts", ".test.tsx"];
 
 const HEX_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/;
-const FUNCTIONAL_COLOR = /\b(?:rgb|rgba|hsl|hsla)\(/;
+const FUNCTIONAL_COLOR = /\b(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix)\(/;
 
 const hasColorLiteral = (line: string): boolean =>
   HEX_COLOR.test(line) || FUNCTIONAL_COLOR.test(line);
@@ -97,6 +109,22 @@ describe("what counts as a colour literal", () => {
     expect(colorLiteralHitsInText("x.ts", 'const x = "hsl(0deg 0% 0%)";')).toHaveLength(1);
   });
 
+  it("matches the modern colour spaces a CSS overhaul would reach for", () => {
+    expect(colorLiteralHitsInText("x.css", "  color: oklch(62% 0.2 250);")).toHaveLength(1);
+    expect(colorLiteralHitsInText("x.css", "  color: lab(50% 40 59.5);")).toHaveLength(1);
+    expect(colorLiteralHitsInText("x.css", "  color: color(display-p3 1 0 0);")).toHaveLength(1);
+    expect(
+      colorLiteralHitsInText("x.css", "  color: color-mix(in oklch, white, black);"),
+    ).toHaveLength(1);
+  });
+
+  it("does not mistake a custom property reference for a colour", () => {
+    expect(colorLiteralHitsInText("x.css", "  color: var(--mh-color-text);")).toHaveLength(0);
+    expect(
+      colorLiteralHitsInText("x.css", "  background: var(--mh-color-background);"),
+    ).toHaveLength(0);
+  });
+
   it("does not mistake a hash-prefixed id or a test id for a colour", () => {
     expect(colorLiteralHitsInText("x.ts", 'document.getElementById("root")')).toHaveLength(0);
     expect(colorLiteralHitsInText("x.ts", 'const x = "map-node";')).toHaveLength(0);
@@ -117,6 +145,15 @@ describe("colour literals stay inside apps/web/src/theme.ts", () => {
     const hits = files.flatMap((file) => colorLiteralHitsIn(file));
 
     expect(hits).toEqual([]);
+  });
+
+  it("scans the stylesheet, which gets no exemption at all", () => {
+    const stylesheets = sourceFilesUnder(WEB_SRC_DIR, "").filter((file) =>
+      file.relativePath.endsWith(STYLESHEET_EXTENSION),
+    );
+
+    expect(stylesheets.length).toBeGreaterThan(0);
+    expect(stylesheets.flatMap((file) => colorLiteralHitsIn(file))).toEqual([]);
   });
 
   it("does scan theme.ts itself, so the token file is not just excluded from every check", () => {

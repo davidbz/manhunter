@@ -219,7 +219,7 @@
       }
     },
     {
-      "includes": ["**/*.config.ts", "**/*.config.js"],
+      "includes": ["**/*.config.ts", "**/*.config.js", "**/*.d.ts"],
       "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
     },
     {

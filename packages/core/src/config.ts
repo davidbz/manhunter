@@ -25,7 +25,7 @@ export type MapConfig = {
 /**
  * How hard the hunt should be. In the MVP it selects nothing but the pool of criminal profiles the
  * seed may draw from (`balance.criminal.pools`), and only `amateur` has behaviour, so every pool
- * names it alone until PLAN M6 implements the other three.
+ * names it alone until PLAN M7 implements the other three.
  */
 export type Difficulty = "easy" | "standard" | "hard";
 

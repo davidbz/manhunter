@@ -81,7 +81,7 @@ type Filing = {
 
 /**
  * One thing the city does unasked, as data: how often it happens, and what it files when it does.
- * A reward line (PLAN M6) or a planted trail is an entry here rather than a branch in `collect`.
+ * A reward line (PLAN M7) or a planted trail is an entry here rather than a branch in `collect`.
  */
 type UnpromptedSource = {
   readonly rate: (scene: Scene) => number;
