@@ -18,6 +18,7 @@ import {
   createTopologyLogic,
   createTurnLogic,
   createValidatorLogic,
+  encodeReplay,
   makeEdgeId,
   makeReplay,
 } from "@manhunter/core";
@@ -245,6 +246,89 @@ describe("the replay it builds once a hunt settles", () => {
     const replayed = playback.play({ replay, balance: BALANCE });
 
     expect(replayed).toEqual({ kind: "playback", frames: settled.frames, world: settled.world });
+  });
+});
+
+/**
+ * PLAN M5.6b-2's `loadShared`. It decides not to invent a lighter path for a shared hunt than a
+ * played one gets: a replay string is played back through the same `deps.playback` `framesFor`
+ * already uses, and the `Hunt` it builds is asserted here to match, field by field, the `Hunt`
+ * the store would have built by actually playing the same seed, setup and log turn by turn.
+ */
+describe("loading a shared replay", () => {
+  const stringFor = (replay: Parameters<typeof makeReplay>[0]): string => {
+    const encoded = encodeReplay(makeReplay(replay));
+    if (encoded.kind !== "replay_string") {
+      throw new Error(`expected a string, got ${encoded.kind}`);
+    }
+    return encoded.value;
+  };
+
+  it("builds the same hunt a played-out game would have, from its own replay string", () => {
+    const settled = huntIn(playedOut(startedStore()));
+    const value = stringFor({
+      seed: settled.seed,
+      setup: settled.setup,
+      actions: settled.recordedActions,
+    });
+
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+    store.getState().loadShared(value);
+    const loaded = huntIn(store);
+
+    expect(loaded.seed).toBe(settled.seed);
+    expect(loaded.setup).toEqual(settled.setup);
+    expect(loaded.recordedActions).toEqual(settled.recordedActions);
+    expect(loaded.view).toEqual(settled.view);
+    expect(loaded.score).toEqual(settled.score);
+    expect(loaded.frames).toEqual(settled.frames);
+    expect(store.getState().shareLinkRefusal).toBeNull();
+  });
+
+  it("resumes an unfinished replay as a normal in-progress hunt, playable onward", () => {
+    const live = startedStore();
+    live.getState().endTurn([]);
+    const midHunt = huntIn(live);
+    const value = stringFor({
+      seed: midHunt.seed,
+      setup: midHunt.setup,
+      actions: midHunt.recordedActions,
+    });
+
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+    store.getState().loadShared(value);
+    const loaded = huntIn(store);
+
+    expect(loaded.view.outcome.kind).toBe("in_progress");
+    expect(loaded.frames).toBeNull();
+
+    store.getState().endTurn([]);
+
+    expect(huntIn(store).view.clock.turn).toBe(loaded.view.clock.turn + 1);
+  });
+
+  it("refuses a malformed replay string and leaves no hunt behind", () => {
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+
+    store.getState().loadShared("not a replay");
+
+    expect(store.getState().hunt).toBeNull();
+    expect(store.getState().shareLinkRefusal).toMatchObject({ kind: "malformed" });
+  });
+
+  /** The task's own AC, at the store boundary this time: refused before `core` ever parses it. */
+  it("refuses a replay string one character over web's own URL bound", () => {
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+    const overLong = "a".repeat(LIMITS.maxReplayStringLength + 1);
+
+    store.getState().loadShared(overLong);
+
+    expect(store.getState().hunt).toBeNull();
+    expect(store.getState().shareLinkRefusal).toEqual({
+      kind: "share_link_too_long",
+      length: LIMITS.maxReplayStringLength + 1,
+      maxLength: LIMITS.maxReplayStringLength,
+    });
   });
 });
 

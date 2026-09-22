@@ -28,6 +28,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { createGameStore } from "./gamestore";
+import { replayParamOf } from "./sharelinkurl";
 import { GameStoreProvider } from "./storecontext";
 
 const MOUNT_ELEMENT_ID = "root";
@@ -60,6 +61,16 @@ const scoring = createScoringLogic();
 const playback = createPlaybackLogic({ game, turn });
 
 const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+
+/**
+ * The share link (PLAN M5.6b-2), read once at load the same way `MOUNT_ELEMENT_ID` is: a shared
+ * hunt is a property of the page this build was opened from, not something a component decides
+ * to fetch, so it is wired here rather than from inside `App`.
+ */
+const sharedReplay = replayParamOf(window.location.search);
+if (sharedReplay !== null) {
+  store.getState().loadShared(sharedReplay);
+}
 
 const mount = document.getElementById(MOUNT_ELEMENT_ID);
 if (!mount) {

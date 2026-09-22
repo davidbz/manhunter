@@ -30,6 +30,10 @@
  *
  * **`ReplayScreen` (PLAN M5.6b) renders beside `EndScreenPanel` once the hunt is over**, the
  * after-action replay next to the outcome it explains.
+ *
+ * **`ShareLinkPanel` (PLAN M5.6b-2) renders alongside them**, and `ShareLinkErrorPanel` renders
+ * beside `NewHuntForm` instead - a shared link that failed to load leaves `state.hunt` `null`,
+ * which is exactly the branch that already shows the form and `DispatchErrorsPanel`.
  */
 
 import type { HunterActionKind } from "@manhunter/core";
@@ -45,6 +49,7 @@ import { MetersPanel } from "./meterspanel";
 import { NewHuntForm } from "./newhuntform";
 import { ReplayScreen } from "./replayscreen";
 import { ReportFeedPanel } from "./reportfeedpanel";
+import { ShareLinkErrorPanel, ShareLinkPanel } from "./sharelinkpanel";
 import { useGameStore } from "./storecontext";
 import { TurnQueuePanel } from "./turnqueuepanel";
 
@@ -79,6 +84,7 @@ export const DispatchScreen = () => {
     return (
       <>
         <DispatchErrorsPanel />
+        <ShareLinkErrorPanel />
         <NewHuntForm />
       </>
     );
@@ -88,6 +94,7 @@ export const DispatchScreen = () => {
       <>
         <EndScreenPanel />
         <ReplayScreen />
+        <ShareLinkPanel />
       </>
     );
 

@@ -104,6 +104,7 @@ export type { EdgeId, NodeId, ReportId } from "./ids";
 export { makeEdgeId, makeNodeId, makeReportId } from "./ids";
 export type { IntelDraw, IntelLogic, IntelRequest } from "./intel";
 export { createIntelLogic } from "./intel";
+export { LIMITS } from "./limits";
 export type {
   BridgeEdge,
   DistrictType,

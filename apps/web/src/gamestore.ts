@@ -26,6 +26,16 @@
  * position mid-hunt, which architecture rule 4 forbids. `framesFor` below only calls `playback`
  * once the world it was just handed has already settled, so `frames` stays `null` for every
  * transition before the last one - one playback per hunt, not one per turn.
+ *
+ * PLAN M5.6b-2's `loadShared` dispatch reuses this same `Hunt` shape rather than inventing a
+ * lighter one: it decodes a URL string into a `Replay` (`sharelinkurl.ts`) and plays it back through
+ * `deps.playback` directly - the one call `framesFor` also makes, just made once here instead of
+ * once per turn - which produces exactly the `{ world, frames }` a hunt reaching that same state
+ * by being played turn by turn would have produced. `EndScreenPanel` and `ReplayScreen` therefore
+ * need no edit to render a shared hunt: they already render whatever `state.hunt` holds. A shared
+ * replay of a hunt that had not yet ended resumes as a normal `in_progress` hunt instead of
+ * jumping to the replay screen, the same way a page reload of a live hunt would if `web` kept one
+ * - nothing here treats "loaded from a link" as a distinct mode from "in memory".
  */
 
 import type {
@@ -37,6 +47,7 @@ import type {
   HunterView,
   PlanningRejection,
   PlaybackLogic,
+  PlaybackResult,
   RevealFrame,
   ScoreBreakdown,
   ScoringLogic,
@@ -48,6 +59,7 @@ import type {
 import { makeReplay, toHunterView } from "@manhunter/core";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { LIMITS } from "./limits";
+import { decodeShareLink, type ShareLinkRefusal } from "./sharelinkurl";
 
 /** What the hunter asked for on one turn, in submitted order. One entry per turn played. */
 export type RecordedTurn = readonly HunterAction[];
@@ -90,6 +102,15 @@ export type StoreRefusal =
       readonly maxTurns: number;
     };
 
+/**
+ * Why a shared link produced no hunt (PLAN M5.6b-2): `sharelinkurl.ts`'s own refusals, for the URL
+ * string itself, plus `playback.ts`'s (`PlaybackResult` minus its one success case), for a replay
+ * that read fine but could not be played. A separate union from `StoreRefusal` on purpose - it
+ * means "there is no hunt to show" on page load, not "the last dispatch against a running hunt
+ * did nothing" - so it is a field of its own rather than a case folded into that one.
+ */
+export type ShareLinkLoadRefusal = ShareLinkRefusal | Exclude<PlaybackResult, { kind: "playback" }>;
+
 export type StartRequest = {
   readonly setup: GameSetup;
   readonly seed: number;
@@ -101,8 +122,11 @@ export type GameStoreState = {
   readonly refusal: StoreRefusal | null;
   /** The actions the last played turn declined, by their position in the submitted queue. */
   readonly rejections: readonly PlanningRejection[];
+  /** Why the URL's replay string, if any, produced no hunt. `null` once one has (PLAN M5.6b-2). */
+  readonly shareLinkRefusal: ShareLinkLoadRefusal | null;
   readonly start: (request: StartRequest) => void;
   readonly endTurn: (actions: readonly HunterAction[]) => void;
+  readonly loadShared: (value: string) => void;
 };
 
 export type GameStore = StoreApi<GameStoreState>;
@@ -115,15 +139,17 @@ export type GameStoreDeps = {
 };
 
 /** Everything a dispatch may change. The dispatches themselves and the balance never move. */
-type Transition = Pick<GameStoreState, "hunt" | "refusal" | "rejections">;
+type Transition = Pick<GameStoreState, "hunt" | "refusal" | "rejections" | "shareLinkRefusal">;
 
 const NO_REJECTIONS: readonly PlanningRejection[] = [];
 const NO_FRAMES = null;
+const NO_SHARE_LINK_REFUSAL = null;
 
 const refused = (hunt: Hunt | null, refusal: StoreRefusal): Transition => ({
   hunt,
   refusal,
   rejections: NO_REJECTIONS,
+  shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
 });
 
 /**
@@ -164,6 +190,7 @@ const started = (deps: GameStoreDeps, state: GameStoreState, request: StartReque
     },
     refusal: null,
     rejections: NO_REJECTIONS,
+    shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
   };
 };
 
@@ -200,6 +227,43 @@ const ended = (
     },
     refusal: null,
     rejections: result.rejections,
+    shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
+  };
+};
+
+/**
+ * A shared hunt from the URL (PLAN M5.6b-2), or why there is none. `decodeShareLink` is the URL
+ * boundary; `deps.playback.play` is the same replay-playing call `framesFor` makes for the
+ * scrubber, just made directly here rather than derived from a log the store already holds, since
+ * there is no live world yet to have stepped one turn at a time. Its result already carries both
+ * `frames` and the final `world` in one pass, so unlike `started`/`ended` this never calls
+ * `framesFor` - the frames it would recompute are the ones `result.frames` already is.
+ */
+const shared = (deps: GameStoreDeps, state: GameStoreState, value: string): Transition => {
+  const decoded = decodeShareLink(value);
+  if (decoded.kind !== "replay") {
+    return { hunt: null, refusal: null, rejections: NO_REJECTIONS, shareLinkRefusal: decoded };
+  }
+
+  const result = deps.playback.play({ replay: decoded.replay, balance: state.balance });
+  if (result.kind !== "playback") {
+    return { hunt: null, refusal: null, rejections: NO_REJECTIONS, shareLinkRefusal: result };
+  }
+
+  const view = toHunterView(result.world);
+  return {
+    hunt: {
+      world: result.world,
+      view,
+      score: deps.scoring.score({ world: result.world, balance: state.balance }),
+      seed: decoded.replay.seed,
+      setup: decoded.replay.setup,
+      recordedActions: decoded.replay.actions,
+      frames: view.outcome.kind === "in_progress" ? NO_FRAMES : result.frames,
+    },
+    refusal: null,
+    rejections: NO_REJECTIONS,
+    shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
   };
 };
 
@@ -209,6 +273,8 @@ export const createGameStore = (deps: GameStoreDeps, balance: Balance): GameStor
     hunt: null,
     refusal: null,
     rejections: NO_REJECTIONS,
+    shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
     start: (request) => set(started(deps, get(), request)),
     endTurn: (actions) => set(ended(deps, get(), actions)),
+    loadShared: (value) => set(shared(deps, get(), value)),
   }));

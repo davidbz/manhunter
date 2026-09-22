@@ -17,6 +17,7 @@ import { METERS_TEST_ID } from "./meters";
 import { NEW_HUNT_TEST_ID } from "./newhuntform";
 import { REPLAY_SCREEN_TEST_ID } from "./replayscreen";
 import { REPORT_FEED_TEST_ID } from "./reportfeed";
+import { SHARE_LINK_LOAD_ERROR_TEST_ID, SHARE_LINK_TEST_ID } from "./sharelink";
 import { GameStoreProvider } from "./storecontext";
 import {
   END_TURN_TEST_ID,
@@ -446,6 +447,25 @@ describe("once the hunt is over", () => {
     await playOut(store);
 
     expect(find(REPLAY_SCREEN_TEST_ID)).not.toBeNull();
+  });
+
+  it("renders the share link beside the end screen (PLAN M5.6b-2)", async () => {
+    const store = await started();
+    await playOut(store);
+
+    expect(find(SHARE_LINK_TEST_ID)).not.toBeNull();
+  });
+});
+
+describe("a share link that failed to load (PLAN M5.6b-2)", () => {
+  it("shows the problem next to the new hunt form, rather than nothing at all", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+
+    await act(async () => store.getState().loadShared("not a replay"));
+
+    expect(find(NEW_HUNT_TEST_ID)).not.toBeNull();
+    expect(find(SHARE_LINK_LOAD_ERROR_TEST_ID)).not.toBeNull();
   });
 
   it("names the outcome the hunt actually ended with", async () => {
