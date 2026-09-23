@@ -157,7 +157,7 @@ describe("the criminal profile is drawn from the difficulty's pool", () => {
     }
   });
 
-  // The shipped pools hold the same single profile each (PLAN M7 fills the rest), so pools that
+  // The shipped pools hold the same single profile each (PLAN M8 fills the rest), so pools that
   // differ from one another are injected rather than waited for: otherwise both the "difficulty
   // selects the pool" and "the draw is a draw" readings pass vacuously. `professional` has no
   // weights yet, which is why only a balance a test builds may name it.

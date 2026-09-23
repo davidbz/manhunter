@@ -5,7 +5,7 @@
  *
  * Four components, not five. Captured-alive is not one of them: no MVP action can use force and a
  * capture is both sides on one node, so the flag would be `true` by construction and the bonus a
- * constant on every win (PLAN "Decisions"). It returns with the force actions in M7, as a fifth
+ * constant on every win (PLAN "Decisions"). It returns with the force actions in M8, as a fifth
  * entry in the table below.
  *
  * Political pressure is not one either, and for a different reason: it tracks the clock, and turns

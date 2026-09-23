@@ -40,7 +40,7 @@ const hasBeenCaught: EndCondition = (world) => world.criminal.inCustody;
 /**
  * Standing on an exit node is out (DESIGN.md "criminal escapes via exit"). `ExitSchedule` is not
  * read: no generator emits a `timed` exit yet (PLAN M2.1b), so a closed-for-now branch would be
- * unreachable. Timed exits (PLAN M7) belong here and nowhere else.
+ * unreachable. Timed exits (PLAN M8) belong here and nowhere else.
  */
 const hasEscaped: EndCondition = (world) =>
   world.map.exits.some((exit) => exit.nodeId === world.criminal.nodeId);

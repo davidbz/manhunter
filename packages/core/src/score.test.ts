@@ -165,7 +165,7 @@ describe("the components", () => {
   };
 
   /**
-   * Keyed by `ScoreComponentKind`, so a fifth component - M7's captured-alive, say - stops this
+   * Keyed by `ScoreComponentKind`, so a fifth component - M8's captured-alive, say - stops this
    * file compiling until somebody says what it is worth, rather than going quietly unrendered.
    */
   const EXPECTED_POINTS: Readonly<Record<ScoreComponentKind, number>> = {
