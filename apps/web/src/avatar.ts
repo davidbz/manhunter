@@ -229,14 +229,20 @@ const mix32 = (value: number): number => {
   return (second ^ (second >>> SPLITMIX32.finalShift)) >>> 0;
 };
 
-const saltOf = (kind: AvatarKind): number => {
+/**
+ * FNV-1a over a string, as an unsigned 32-bit seed. Exported for the report feed (PLAN M6.8),
+ * which seeds each source's face from the report's public id, never from the hunt's seed.
+ */
+export const textSeedOf = (text: string): number => {
   let hash: number = FNV1A.offset;
-  for (const character of kind) {
+  for (const character of text) {
     hash = Math.imul(hash ^ (character.codePointAt(0) ?? 0), FNV1A.prime);
   }
 
   return hash >>> 0;
 };
+
+const saltOf = (kind: AvatarKind): number => textSeedOf(kind);
 
 const drawOf = (base: number, index: number): number =>
   mix32((base + Math.imul(index, SPLITMIX32.increment)) >>> 0);

@@ -30,6 +30,7 @@ import {
   createTurnLogic,
   createValidatorLogic,
 } from "@manhunter/core";
+import { type ClipboardLogic, createClipboardLogic } from "./clipboard";
 import type { GameStoreDeps } from "./gamestore";
 
 const rng = createRng();
@@ -62,3 +63,13 @@ export const TEST_GAME_DEPS: GameStoreDeps = {
   scoring: createScoringLogic(),
   playback: createPlaybackLogic({ game, turn }),
 };
+
+/**
+ * A clipboard for tests that render the share link but do not copy it (PLAN M6.9): the page has
+ * no Clipboard API and its timer never fires, so a stray click is a visible `unavailable` rather
+ * than a write that leaves the test.
+ */
+export const TEST_CLIPBOARD: ClipboardLogic = createClipboardLogic({
+  writer: null,
+  wait: () => new Promise<void>(() => undefined),
+});

@@ -19,11 +19,17 @@
  * (architecture rule 1). Left alone deliberately; see the Inbox entry in `docs/PLAN.md`.
  */
 
-import type { DistrictType, EdgeKind } from "@manhunter/core";
+import type { DistrictType, EdgeKind, ExitKind, TimeOfDay } from "@manhunter/core";
+import type { ActionIconTheme } from "./actionicon";
 import type { AvatarTheme } from "./avatarportrait";
-import type { HeatRamp } from "./beliefoverlay";
+import type { BeliefLegendTheme } from "./belieflegend";
+import type { BeliefFieldTheme, HeatRamp } from "./beliefoverlay";
 import type { CriminalPathTheme } from "./criminalpath";
-import type { MapEdgeStyle, MapTheme } from "./maprenderer";
+import type { FeedRowTheme } from "./feedrow";
+import type { MapBlockStyle, MapEdgeStyle, MapTheme, MapWashStyle } from "./maprenderer";
+import type { MapReportPinStyle } from "./mapreportpins";
+import type { MeterTheme } from "./meters";
+import type { TransportIconTheme } from "./replayscrubber";
 
 /**
  * Raw colour tokens.
@@ -47,7 +53,13 @@ export const PALETTE = {
 
   text: "#e8f1ff",
   textMuted: "#93a5ba",
-  textDim: "#5e7288",
+  /**
+   * The quietest text tone: order numbers, a stale report, a resource the hunter is short of.
+   * Retuned from `#5e7288` by PLAN M6.10's contrast audit (`contrast.test.ts`), which measured
+   * the old value at 3.1:1 on a card; this one clears 4.5:1 on every surface, so "dim" is a step
+   * down from `textMuted`, never a step below legible.
+   */
+  textDim: "#7a8fa5",
 
   /** The criminal: heat, located incidents, a checkpoint that fired. */
   incidentRed: "#e8483f",
@@ -79,6 +91,25 @@ export const PALETTE = {
   transitHub: "#c07fc0",
 
   /**
+   * District block tones (PLAN M6.4): the marker hues above pushed most of the way to the ground,
+   * so a block says what kind of place it is without competing with the roads drawn across it.
+   * Types differ by hatch angle and spacing as well as by tone, so hue is never the only channel.
+   */
+  blockDowntown: "#1c2c3a",
+  blockResidential: "#223024",
+  blockSuburb: "#2c2f22",
+  blockIndustrial: "#322a21",
+  blockPark: "#18301f",
+  blockTransitHub: "#2c2333",
+  blockExit: "#3a3120",
+  blockHatch: "#50657a",
+  riverBank: "#123247",
+  riverCurrent: "#2f6e91",
+  bridgeDeck: "#2a3846",
+  /** The night wash laid over the plate after dark: a deep blue, never a hue of its own. */
+  nightWash: "#02060f",
+
+  /**
    * Avatar skin tones, greyed toward the surface ramp so a face never out-shouts the map. They are
    * the only non-map hues outside the discipline above, and they are deliberately desaturated.
    */
@@ -86,6 +117,15 @@ export const PALETTE = {
   skinWarm: "#a08674",
   skinTan: "#7c6556",
   skinDeep: "#54453c",
+
+  /**
+   * Mask channels, not paint (PLAN M6.8). A CSS `mask-image` reads only alpha, so these two are
+   * the opaque and the clear stop of the gradient that cuts a meter into segments. Named rather
+   * than written as `black`/`transparent` so the stylesheet stays keyword-free as well as
+   * literal-free.
+   */
+  maskInk: "#000000",
+  maskClear: "rgba(0, 0, 0, 0)",
 } as const;
 
 /**
@@ -146,18 +186,44 @@ export const SHADOW = {
   focusRing: `0 0 0 2px ${PALETTE.background}, 0 0 0 4px ${PALETTE.accent}`,
 } as const;
 
+const DURATION_FAST = "160ms";
+const DURATION_BASE = "240ms";
+const DURATION_SLOW = "420ms";
+
 /**
  * Motion is confirmation, never decoration (DESIGN.md). Every duration here is applied behind a
  * `prefers-reduced-motion` guard in `index.css`; the tokens exist so no component invents its own
  * timing and so the guard has one set of things to switch off.
+ *
+ * The five named moments below (PLAN M6.10) are the only things that move, and each confirms
+ * something the player did or was told: the turn they ended advanced, a report they paid for
+ * arrived, a meter they spent from moved, a checkpoint they ordered went up, and the hunt they
+ * ran ended. `tools/theme/reducedmotion.test.ts` holds every one of them to the guard.
  */
 export const MOTION = {
   durationInstant: "90ms",
-  durationFast: "160ms",
-  durationBase: "240ms",
-  durationSlow: "420ms",
+  durationFast: DURATION_FAST,
+  durationBase: DURATION_BASE,
+  durationSlow: DURATION_SLOW,
   easeOut: "cubic-bezier(0.16, 1, 0.3, 1)",
   easeStandard: "cubic-bezier(0.4, 0, 0.2, 1)",
+  /** How much larger the map's selection reticle starts before it locks on (PLAN M6.5). */
+  lockOnScale: "1.6",
+  /** The rail's clock turning over to the next hour. */
+  turnAdvance: DURATION_BASE,
+  /** A new feed row sliding in, and its pin landing on the map. */
+  reportArrival: DURATION_SLOW,
+  /** A meter's reading flashing the accent as it changes. */
+  meterMovement: DURATION_SLOW,
+  /**
+   * A checkpoint's barrier dropping onto the road. The hunter is never told a checkpoint fired on
+   * the criminal (architecture rule 4), so the moment the player sees is the barrier going live.
+   */
+  checkpointFire: DURATION_BASE,
+  /** The debrief's verdict banner landing, then the tally under it. */
+  outcomeSting: DURATION_SLOW,
+  /** How far an arriving element travels to its place: a feed row, the rail's reading, the banner. */
+  arrivalOffset: "0.5rem",
 } as const;
 
 /**
@@ -174,6 +240,53 @@ export const LAYOUT = {
   intelWidth: "clamp(18rem, 24vw, 28rem)",
   commandMaxHeight: "clamp(10rem, 32dvh, 20rem)",
   commandColumnMin: "14rem",
+  /** The narrowest an action tile gets before the board wraps to another row (PLAN M6.8). */
+  tileMin: "9.5rem",
+  /** A stencil icon on an action tile or a dispatch-order line. */
+  iconSize: "1.5rem",
+  /** The map legend's ramp and contour swatches, and its pin swatches (PLAN M6.6). */
+  legendRampWidth: "2.5rem",
+  legendRampHeight: "0.5rem",
+  legendPin: "1rem",
+  /**
+   * The briefing and the debrief (PLAN M6.9). The briefing is a readable column rather than the
+   * full width; the debrief's side column holds the dossier, the share link and restart; the
+   * replay map keeps a floor so a short viewport scrolls the debrief rather than crushing the
+   * city; and a share link long enough to wrap for lines scrolls inside its own box.
+   */
+  briefingWidth: "64rem",
+  briefingSideWidth: "clamp(16rem, 26vw, 20rem)",
+  debriefSideWidth: "clamp(16rem, 24vw, 24rem)",
+  replayMapMin: "16rem",
+  shareUrlMaxHeight: "6rem",
+} as const;
+
+/** Rule weights for the panel chrome (PLAN M6.8): a hairline between rows, a heavy edge for state. */
+export const BORDER = {
+  hairline: "1px",
+  heavy: "3px",
+} as const;
+
+/**
+ * How far an element recedes when it is out of play (PLAN M6.8): a stale report pin, an action
+ * the hunter cannot afford. A stale feed row is not faded (PLAN M6.10's contrast audit). Opacity rather than a new grey, so the element keeps its own colours.
+ */
+export const FADE = {
+  /** A report pin a few turns old (PLAN M6.6), between fresh and stale. */
+  aging: "0.8",
+  stale: "0.55",
+  disabled: "0.45",
+} as const;
+
+/**
+ * The segmented meters (PLAN M6.8). `segments` is the count a scaled meter - budget, trust,
+ * pressure - is cut into; a meter measured in whole units (action points, turns) overrides it on
+ * the element with one segment per unit, which `meters.tsx` decides.
+ */
+export const METER = {
+  height: "0.875rem",
+  segmentGap: "3px",
+  segments: "10",
 } as const;
 
 /**
@@ -189,6 +302,9 @@ export const DESIGN_TOKENS = {
   shadow: SHADOW,
   motion: MOTION,
   layout: LAYOUT,
+  border: BORDER,
+  fade: FADE,
+  meter: METER,
 } as const;
 
 export type DesignTokens = typeof DESIGN_TOKENS;
@@ -213,12 +329,37 @@ export const STROKE = {
  */
 const GLOW_BLUR = 1.5;
 
+/**
+ * Casing plus fill (PLAN M6.4): a dark `casingWidth` stroke under a bright `width` stroke, with
+ * the glow beneath both. Kinds differ by width and dash as well as by hue, so the map survives a
+ * reader who cannot separate the hues: a road is solid and wide, a footpath narrow and dotted, a
+ * rail a dashed fill over a solid casing (sleepers on a bed), a tunnel dashed in both, and a
+ * bridge the widest of all.
+ */
 const EDGE_STYLES: Readonly<Record<EdgeKind, MapEdgeStyle>> = {
-  road: { stroke: PALETTE.road, width: STROKE.base, dash: null },
-  footpath: { stroke: PALETTE.footpath, width: STROKE.thin, dash: "3 3" },
-  rail: { stroke: PALETTE.rail, width: STROKE.base, dash: "8 4" },
-  tunnel: { stroke: PALETTE.tunnel, width: STROKE.base, dash: "1 4" },
-  bridge: { stroke: PALETTE.bridge, width: STROKE.thick, dash: null },
+  road: { stroke: PALETTE.road, width: 2.5, dash: null, casingWidth: 6, casingDash: null },
+  footpath: {
+    stroke: PALETTE.footpath,
+    width: STROKE.thin,
+    dash: "3 3",
+    casingWidth: 3.5,
+    casingDash: null,
+  },
+  rail: { stroke: PALETTE.rail, width: STROKE.base, dash: "8 4", casingWidth: 5, casingDash: null },
+  tunnel: {
+    stroke: PALETTE.tunnel,
+    width: STROKE.base,
+    dash: "1 4",
+    casingWidth: 5,
+    casingDash: "6 3",
+  },
+  bridge: {
+    stroke: PALETTE.bridge,
+    width: STROKE.thick,
+    dash: null,
+    casingWidth: 7,
+    casingDash: null,
+  },
 };
 
 const DISTRICT_FILLS: Readonly<Record<DistrictType, string>> = {
@@ -231,22 +372,183 @@ const DISTRICT_FILLS: Readonly<Record<DistrictType, string>> = {
   exit: PALETTE.exitGold,
 };
 
+/**
+ * One block treatment per district type (PLAN M6.4). Angles are degrees, spacings map units; the
+ * dense grain is downtown's and the open grain the suburbs' and parks', so density reads as
+ * density before the tone does.
+ */
+const DISTRICT_BLOCKS: Readonly<Record<DistrictType, MapBlockStyle>> = {
+  downtown: { tone: PALETTE.blockDowntown, hatchAngle: 45, hatchSpacing: 5 },
+  residential: { tone: PALETTE.blockResidential, hatchAngle: 45, hatchSpacing: 9 },
+  suburb: { tone: PALETTE.blockSuburb, hatchAngle: 135, hatchSpacing: 14 },
+  industrial: { tone: PALETTE.blockIndustrial, hatchAngle: 90, hatchSpacing: 7 },
+  park: { tone: PALETTE.blockPark, hatchAngle: 135, hatchSpacing: 18 },
+  transit_hub: { tone: PALETTE.blockTransitHub, hatchAngle: 0, hatchSpacing: 6 },
+  exit: { tone: PALETTE.blockExit, hatchAngle: 45, hatchSpacing: 4 },
+};
+
+/**
+ * The wash over the plate per `TimeOfDay` (PLAN M6.4). Day is clear; night lays deep blue over
+ * the ground and every block, because a park at night has no witnesses at all
+ * (`balance.districts.park.nightWitnessMultiplier` is 0) and the plan should look it.
+ */
+const DAYLIGHT_WASH: Readonly<Record<TimeOfDay, MapWashStyle>> = {
+  day: { fill: PALETTE.nightWash, opacity: 0 },
+  night: { fill: PALETTE.nightWash, opacity: 0.5 },
+};
+
+/**
+ * Exit glyphs, hand-authored stroke paths on a 16-unit square (PLAN M6.4). `ExitKind` is flavour
+ * no MVP rule reads (`districts.ts`), which is what makes it free iconography: an aircraft, an
+ * anchor, a boom barrier, a two-lane road.
+ */
+const EXIT_GLYPHS: Readonly<Record<ExitKind, string>> = {
+  airport: "M8 1.5 V14.5 M1.5 9.5 L8 6 L14.5 9.5 M5 14.5 L8 12.5 L11 14.5",
+  port: "M8 4.5 V14 M5 7 H11 M2.5 10 Q2.5 14 8 14 Q13.5 14 13.5 10 M6.5 3 A1.5 1.5 0 1 1 9.5 3 A1.5 1.5 0 1 1 6.5 3",
+  border: "M2.5 14.5 V3.5 M2.5 6 H14 V10 H2.5 M5.5 6 L8 10 M9.5 6 L12 10",
+  highway: "M5 1.5 L2 14.5 M11 1.5 L14 14.5 M8 1.5 V4 M8 6.5 V9.5 M8 12 V14.5",
+};
+
+/**
+ * District glyphs for the unit pips (PLAN M6.5), stroke paths on the same 16-unit square as the
+ * exit glyphs: towers, a house, a pair of houses, a sawtooth roof and chimney, a tree, a train,
+ * and an arrow out. The pip's district hue is already one channel; the glyph is the second, so a
+ * district never reads by colour alone.
+ */
+const DISTRICT_GLYPHS: Readonly<Record<DistrictType, string>> = {
+  downtown: "M2 14.5 V6 H6 V14.5 M6 14.5 V2 H11 V14.5 M11 14.5 V8 H14 V14.5 M1.5 14.5 H14.5",
+  residential: "M2.5 8 L8 2.5 L13.5 8 M4 7 V14 H12 V7 M6.5 14 V10 H9.5 V14",
+  suburb: "M1.5 9 L4.5 6 L7.5 9 V14 H1.5 Z M8.5 9 L11.5 6 L14.5 9 V14 H8.5 Z",
+  industrial: "M1.5 14.5 V8.5 L5 6 V8.5 L8.5 6 V8.5 L12 6 V14.5 H1.5 M12 9 V2 H14.5 V14.5 H12",
+  park: "M8 1.5 L3 9.5 H13 Z M8 9.5 V14.5 M5 14.5 H11",
+  transit_hub: "M4 2.5 H12 V11 H4 Z M4 7.5 H12 M6 11 L4 14.5 M10 11 L12 14.5",
+  exit: "M9 2.5 H13.5 V13.5 H9 M2.5 8 H10.5 M7.5 5 L10.5 8 L7.5 11",
+};
+
+/** An exclamation mark on the harm badge, on a 16-unit square. */
+const HARM_GLYPH = "M8 3 V9.5 M8 12.5 V13";
+
+/**
+ * The feed's row treatments (PLAN M6.8). Ages are turns since the report was observed, the gap
+ * DESIGN.md's first pillar is about; weights are `balance.belief.sourceWeight` values, so CCTV
+ * (0.9) reads high, patrol and witness (0.6, 0.5) fair, and a tip (0.2) low.
+ */
+export const FEED_ROW_THEME: FeedRowTheme = {
+  agingFromAge: 2,
+  staleFromAge: 4,
+  highFromWeight: 0.75,
+  fairFromWeight: 0.45,
+};
+
+/**
+ * Recent reports on the map (PLAN M6.6): a teardrop on a 16-unit box with its tip at the bottom
+ * centre, standing on the pip's top edge. A sighting carries a filled red dot - a claim about the
+ * criminal - and a clearance a muted bar, so the kinds differ by shape as well as by hue. Pinned
+ * for five turns, the feed's stale tier and one turn past it, so a pin fades before it goes.
+ */
+const REPORT_PIN: MapReportPinStyle = {
+  size: 18,
+  /** Half the pip's 13 units, so the tip lands on the pip's top edge. */
+  lift: 6.5,
+  glyphBox: 16,
+  outline: "M8 16 C6.5 12.5 3 10 3 6.5 A5 5 0 0 1 13 6.5 C13 10 9.5 12.5 8 16 Z",
+  plate: PALETTE.surfaceSunken,
+  strokeWidth: STROKE.thin,
+  markWidth: 2.5,
+  kinds: {
+    sighting: {
+      stroke: PALETTE.text,
+      mark: "M8 4.5 A2 2 0 1 1 8 8.5 A2 2 0 1 1 8 4.5 Z",
+      markFill: PALETTE.incidentRed,
+      markStroke: "none",
+    },
+    no_sighting: {
+      stroke: PALETTE.textMuted,
+      mark: "M5.5 6.5 H10.5",
+      markFill: "none",
+      markStroke: PALETTE.textMuted,
+    },
+  },
+  maxAge: 5,
+  staleness: FEED_ROW_THEME,
+};
+
 /** The map's whole palette plus its measurements, in the shape `maprenderer.tsx` declares. */
 export const MAP_THEME: MapTheme = {
   padding: 24,
-  river: PALETTE.river,
-  riverWidth: 6,
-  nodeRadius: 6,
-  incidentRadius: 9,
-  nodeStroke: PALETTE.nodeStroke,
-  exitStroke: PALETTE.exitGold,
-  incidentStroke: PALETTE.incidentRed,
-  markerWidth: 2.5,
-  selectionStroke: PALETTE.selectionWhite,
-  selectionWidth: STROKE.base,
-  selectionGap: 4,
-  blockedStroke: PALETTE.incidentRed,
-  blockedRadius: 3.5,
+  ground: PALETTE.surfaceSunken,
+  streetGap: 7,
+  blockSeam: STROKE.hairline,
+  hatch: PALETTE.blockHatch,
+  hatchWidth: STROKE.hairline,
+  hatchOpacity: 0.35,
+  blocks: DISTRICT_BLOCKS,
+  wash: DAYLIGHT_WASH,
+  river: {
+    water: PALETTE.river,
+    width: 22,
+    bank: PALETTE.riverBank,
+    bankWidth: STROKE.thin,
+    current: PALETTE.riverCurrent,
+    currentWidth: STROKE.hairline,
+    currentDash: "10 8",
+    deckFill: PALETTE.bridgeDeck,
+    deckStroke: PALETTE.edgeStrong,
+    deckStrokeWidth: STROKE.hairline,
+    deckWidth: 12,
+    deckOverhang: 4,
+  },
+  exitGate: {
+    size: 16,
+    offset: 14,
+    inset: 2,
+    plate: PALETTE.surfaceSunken,
+    stroke: PALETTE.exitGold,
+    strokeWidth: STROKE.thin,
+    glyph: PALETTE.exitGold,
+    glyphWidth: STROKE.thin,
+    glyphBox: 16,
+    glyphs: EXIT_GLYPHS,
+  },
+  edgeCasing: PALETTE.surfaceSunken,
+  pip: {
+    size: 13,
+    corner: 2,
+    inset: 2,
+    plate: PALETTE.surfaceSunken,
+    strokeWidth: STROKE.thin,
+    glyphWidth: STROKE.base,
+    glyphBox: 16,
+    glyphs: DISTRICT_GLYPHS,
+  },
+  incidentRing: { radius: 12, stroke: PALETTE.incidentRed, width: STROKE.base },
+  focus: { gap: 3, stroke: PALETTE.accent, width: STROKE.base },
+  reticle: { gap: 4, tick: 4, stroke: PALETTE.accent, width: STROKE.base },
+  selectionStroke: PALETTE.accent,
+  checkpoint: {
+    length: 16,
+    thickness: 5,
+    plate: PALETTE.surfaceSunken,
+    stroke: PALETTE.accent,
+    strokeWidth: STROKE.hairline,
+    stripeCount: 4,
+    stripeWidth: STROKE.thin,
+  },
+  harm: {
+    radius: 15,
+    stroke: PALETTE.incidentRed,
+    width: STROKE.thin,
+    dash: "3 3",
+    badgeSize: 11,
+    badgeOffset: 12,
+    badgeFill: PALETTE.incidentRed,
+    glyph: HARM_GLYPH,
+    glyphStroke: PALETTE.surfaceSunken,
+    glyphWidth: STROKE.thick,
+    glyphInset: 2,
+    glyphBox: 16,
+  },
+  reportPin: REPORT_PIN,
   glowBlur: GLOW_BLUR,
   edges: EDGE_STYLES,
   districts: DISTRICT_FILLS,
@@ -254,15 +556,42 @@ export const MAP_THEME: MapTheme = {
 
 /**
  * DESIGN.md's "red heatmap". Its fill is `PALETTE.incidentRed`, the same red as the map's
- * incident marker and standing roadblocks, so there is one red in the app to tune, not several
+ * incident ring and located harm markers, so there is one red in the app to tune, not several
  * that happen to match by coincidence.
  */
 export const HEAT_RAMP: HeatRamp = {
   fill: PALETTE.incidentRed,
-  minRadius: 5,
-  maxRadius: 18,
-  minOpacity: 0.06,
-  maxOpacity: 0.55,
+  minRadius: 22,
+  maxRadius: 56,
+  minOpacity: 0.2,
+  maxOpacity: 0.85,
+};
+
+/**
+ * The belief field (PLAN M6.6). Each blob's gradient is full at the centre and gone at the rim, so
+ * the radii above are where a blob fades out rather than where it stops; on a 100-unit grid the
+ * peak's reaches its neighbours and the field reads as one region. The contour outlines every node
+ * at three quarters of the peak or more, in the heat's own red over a dark casing.
+ */
+export const BELIEF_FIELD: BeliefFieldTheme = {
+  stops: [
+    { offset: 0, opacity: 1 },
+    { offset: 0.4, opacity: 0.7 },
+    { offset: 1, opacity: 0 },
+  ],
+  contourFrom: 0.75,
+  contourStroke: PALETTE.incidentRed,
+  contourWidth: STROKE.thin,
+  contourDash: "6 4",
+  contourCasing: PALETTE.surfaceSunken,
+  contourCasingWidth: STROKE.thick,
+  padding: MAP_THEME.padding,
+};
+
+/** The legend's ramp and contour swatches, drawn on a box the stylesheet stretches to size. */
+export const BELIEF_LEGEND: BeliefLegendTheme = {
+  swatchWidth: 48,
+  swatchHeight: 8,
 };
 
 /** Gold against the map's red heatmap, so the criminal's current position reads apart from it. */
@@ -297,4 +626,46 @@ export const AVATAR_THEME: AvatarTheme = {
   plateEdgeWidth: STROKE.hairline,
   portraitSize: 96,
   thumbnailSize: 32,
+};
+
+/**
+ * How far a whole-unit meter may go before one segment per unit stops reading as chunky (PLAN
+ * M6.8). A standard hunt's clock is 24 turns, which is the most segments the board draws; a longer
+ * range falls back to `METER.segments`.
+ */
+export const METER_THEME: MeterTheme = {
+  maxUnitSegments: 24,
+};
+
+/**
+ * Stencil icons for the action board and the dispatch order (PLAN M6.8): hand-authored stroke
+ * paths on a 16-unit square, drawn in `currentColor` so a tile's state colours its icon. A
+ * striped barrier on legs, a speech bubble, a camera on its bracket, a microphone on a stand.
+ */
+export const ACTION_ICON_THEME: ActionIconTheme = {
+  box: 16,
+  strokeWidth: STROKE.thin,
+  glyphs: {
+    roadblock:
+      "M1.5 4.5 H14.5 V9 H1.5 Z M5 4.5 L2.5 9 M9 4.5 L6.5 9 M13 4.5 L10.5 9 M3.5 9 V14.5 M12.5 9 V14.5",
+    canvass: "M1.5 2.5 H14.5 V10.5 H7 L3.5 13.5 V10.5 H1.5 Z M4.5 5.5 H11.5 M4.5 7.5 H9.5",
+    pull_cctv:
+      "M1.5 5 L10.5 2.5 L12 7.5 L3 10 Z M12 4.5 L14.5 4 M7.5 9 L8.5 12.5 H14.5 M14.5 10.5 V14.5",
+    true_briefing:
+      "M6 1.5 H10 V8.5 H6 Z M4 6.5 V8.5 Q4 11.5 8 11.5 Q12 11.5 12 8.5 V6.5 M8 11.5 V14.5 M5 14.5 H11",
+  },
+};
+
+/**
+ * Transport glyphs for the debrief's replay scrubber (PLAN M6.9), on the action icons' 16-unit
+ * square and filled in `currentColor`: a bar and a wedge for the ends, a wedge alone for one step.
+ */
+export const TRANSPORT_ICON_THEME: TransportIconTheme = {
+  box: 16,
+  glyphs: {
+    first: "M3 3 H5 V13 H3 Z M13 3 L6 8 L13 13 Z",
+    previous: "M11.5 3 L4.5 8 L11.5 13 Z",
+    next: "M4.5 3 L11.5 8 L4.5 13 Z",
+    last: "M3 3 L10 8 L3 13 Z M11 3 H13 V13 H11 Z",
+  },
 };

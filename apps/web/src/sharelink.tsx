@@ -10,6 +10,7 @@
  * narrowed by an exhaustive `switch` with a `never` check, `dispatcherrors.tsx`'s own precedent.
  */
 
+import type { ReactNode } from "react";
 import type { ShareLinkLoadRefusal } from "./gamestore";
 import type { ShareLinkEncoding } from "./sharelinkurl";
 
@@ -111,19 +112,33 @@ const ALERT_ROLE = "alert";
 
 export type ShareLinkProps = {
   readonly encoding: ShareLinkEncoding;
+  /**
+   * What copies the link (PLAN M6.9), drawn under it. A slot rather than a component this file
+   * imports, so the presentational widget needs no clipboard to render and the connected panel
+   * decides what copying means.
+   */
+  readonly copy?: ReactNode;
 };
 
-export const ShareLink = ({ encoding }: ShareLinkProps) => (
-  <section aria-label={SHARE_LINK_LABEL} data-testid={SHARE_LINK_TEST_ID}>
+export const ShareLink = ({ encoding, copy }: ShareLinkProps) => (
+  <section aria-label={SHARE_LINK_LABEL} data-testid={SHARE_LINK_TEST_ID} className="mh-share">
     {encoding.kind === "share_link" ? (
-      <p>
-        {SHARE_LINK_INTRO}
-        <a data-testid={SHARE_LINK_URL_TEST_ID} href={encoding.url}>
-          {encoding.url}
-        </a>
-      </p>
+      <>
+        <p className="mh-share__intro">
+          {SHARE_LINK_INTRO}
+          <a className="mh-share__url" data-testid={SHARE_LINK_URL_TEST_ID} href={encoding.url}>
+            {encoding.url}
+          </a>
+        </p>
+        {copy}
+      </>
     ) : (
-      <p role={ALERT_ROLE} data-testid={SHARE_LINK_ENCODE_ERROR_TEST_ID} data-kind={encoding.kind}>
+      <p
+        role={ALERT_ROLE}
+        className="mh-alert"
+        data-testid={SHARE_LINK_ENCODE_ERROR_TEST_ID}
+        data-kind={encoding.kind}
+      >
         {shareLinkErrorMessage(encoding)}
       </p>
     )}

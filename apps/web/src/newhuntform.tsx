@@ -19,6 +19,9 @@
  * either; it is a `<form>` now and the button is `type="submit"`, which is a swap in element and
  * attribute, not a restructuring - `submit` already existed and is unchanged, so Enter in the
  * seed field now reaches it the way clicking Start always did.
+ *
+ * PLAN M6.9 restyled it for the case briefing (`briefingscreen.tsx`) with classes only: the
+ * difficulty stays a `<select>`, so the form still holds exactly one input and one select.
  */
 
 import type { Difficulty, GameSetup } from "@manhunter/core";
@@ -135,19 +138,30 @@ export const NewHuntForm = () => {
   };
 
   return (
-    <form aria-label={FORM_LABEL} data-testid={NEW_HUNT_TEST_ID} onSubmit={onSubmit}>
-      <label htmlFor={SEED_INPUT_ID}>{SEED_LABEL}</label>
+    <form
+      className="mh-form"
+      aria-label={FORM_LABEL}
+      data-testid={NEW_HUNT_TEST_ID}
+      onSubmit={onSubmit}
+    >
+      <label className="mh-form__label" htmlFor={SEED_INPUT_ID}>
+        {SEED_LABEL}
+      </label>
       <input
         id={SEED_INPUT_ID}
+        className="mh-form__field"
         data-testid={NEW_HUNT_SEED_TEST_ID}
         type={TEXT_INPUT}
         inputMode={NUMERIC_INPUT_MODE}
         value={seedText}
         onChange={(event) => setSeedText(event.target.value)}
       />
-      <label htmlFor={DIFFICULTY_INPUT_ID}>{DIFFICULTY_LABEL}</label>
+      <label className="mh-form__label" htmlFor={DIFFICULTY_INPUT_ID}>
+        {DIFFICULTY_LABEL}
+      </label>
       <select
         id={DIFFICULTY_INPUT_ID}
+        className="mh-form__field"
         data-testid={NEW_HUNT_DIFFICULTY_TEST_ID}
         value={difficulty}
         onChange={(event) => setDifficulty(difficultyOf(event.target.value) ?? difficulty)}
@@ -159,11 +173,20 @@ export const NewHuntForm = () => {
         ))}
       </select>
       {parsed.kind === "seed" ? null : (
-        <p data-testid={NEW_HUNT_SEED_ERROR_TEST_ID} data-refusal={parsed.kind}>
+        <p
+          className="mh-alert mh-form__error"
+          data-testid={NEW_HUNT_SEED_ERROR_TEST_ID}
+          data-refusal={parsed.kind}
+        >
           {seedRefusalMessage(parsed)}
         </p>
       )}
-      <button type="submit" data-testid={NEW_HUNT_START_TEST_ID} disabled={parsed.kind !== "seed"}>
+      <button
+        type="submit"
+        className="mh-button mh-button--commit mh-form__submit"
+        data-testid={NEW_HUNT_START_TEST_ID}
+        disabled={parsed.kind !== "seed"}
+      >
         {START_LABEL}
       </button>
     </form>

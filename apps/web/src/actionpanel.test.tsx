@@ -9,16 +9,21 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { type ActionTarget, GLOBAL_TARGET } from "./actiondraft";
+import { ACTION_ICON_TEST_ID } from "./actionicon";
 import {
+  ACTION_COST_CHIP_TEST_ID,
   ACTION_COST_TEST_ID,
   ACTION_DRAFT_TEST_ID,
   ACTION_KINDS,
   ACTION_OPTION_TEST_ID,
   ACTION_PANEL_TEST_ID,
   ACTION_TARGET_PROMPTS,
+  ACTION_UNAFFORDABLE_TEST_ID,
   ActionPanel,
   type ActionPanelProps,
   actionOptionsOf,
+  COST_CHIP_KINDS,
+  costChipsOf,
   costLabel,
 } from "./actionpanel";
 
@@ -184,5 +189,61 @@ describe("the action panel", () => {
     });
 
     expect(draftLine()?.getAttribute("data-ready")).toBe("true");
+  });
+});
+
+describe("the action tiles (PLAN M6.8)", () => {
+  const chipOf = (kind: HunterActionKind, chip: string): Element | null =>
+    optionFor(kind)?.querySelector(
+      `[data-testid="${ACTION_COST_CHIP_TEST_ID}"][data-chip="${chip}"]`,
+    ) ?? null;
+
+  it("splits the price into one chip per resource that still reads as the cost label", () => {
+    const cost = actionCostOf("roadblock", BALANCE);
+
+    expect(costChipsOf(cost).map((chip) => chip.kind)).toEqual(COST_CHIP_KINDS);
+    expect(
+      costChipsOf(cost)
+        .map((chip) => chip.text)
+        .join(", "),
+    ).toBe(costLabel(cost));
+  });
+
+  it("draws a stencil icon on every tile, for its own action", async () => {
+    await render();
+
+    for (const kind of ACTION_KINDS) {
+      const icon = optionFor(kind)?.querySelector(`[data-testid="${ACTION_ICON_TEST_ID}"]`);
+      expect(icon?.getAttribute("data-icon")).toBe(kind);
+    }
+  });
+
+  it("marks only the resource that falls short", async () => {
+    const cost = actionCostOf("roadblock", BALANCE);
+    await render({
+      options: actionOptionsOf(BALANCE, {
+        actionPoints: cost.actionPoints,
+        budget: cost.budget - 1,
+      }),
+    });
+
+    expect(chipOf("roadblock", "budget")?.getAttribute("data-short")).toBe("true");
+    expect(chipOf("roadblock", "action_points")?.getAttribute("data-short")).toBe("false");
+  });
+
+  it("says in words that an unaffordable action cannot be afforded, and says nothing otherwise", async () => {
+    await render({ options: actionOptionsOf(BALANCE, BROKE) });
+
+    for (const kind of ACTION_KINDS) {
+      expect(
+        optionFor(kind)?.querySelector(`[data-testid="${ACTION_UNAFFORDABLE_TEST_ID}"]`),
+      ).not.toBeNull();
+    }
+  });
+
+  it("puts no unaffordable line on a tile the hunter can pay for", async () => {
+    await render();
+
+    expect(container?.querySelector(`[data-testid="${ACTION_UNAFFORDABLE_TEST_ID}"]`)).toBeNull();
   });
 });

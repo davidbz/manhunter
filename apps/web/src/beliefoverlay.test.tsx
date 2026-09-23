@@ -17,14 +17,20 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  BELIEF_CONTOUR_TEST_ID,
+  BELIEF_FIELD_CLASSES,
+  BELIEF_FIELD_GRADIENT_ID,
   BELIEF_HEAT_TEST_ID,
   BELIEF_OVERLAY_TEST_ID,
   BeliefOverlay,
   beliefHeatOf,
+  DEFAULT_BELIEF_FIELD,
   DEFAULT_HEAT_RAMP,
   heatOf,
   peakBeliefMass,
+  topTierOf,
 } from "./beliefoverlay";
+import STYLESHEET from "./index.css?raw";
 import {
   MAP_NODE_TEST_ID,
   MAP_OVERLAY_TEST_ID,
@@ -280,5 +286,86 @@ describe("the overlay drawn into the map", () => {
     });
 
     expect(selected).toEqual([{ kind: "node", nodeId: HOT }]);
+  });
+});
+
+describe("the belief field (PLAN M6.6)", () => {
+  const FIELD = DEFAULT_BELIEF_FIELD;
+
+  it("fills every blob from the one radial gradient, whose stops are the ramp's hue", async () => {
+    await render(<BeliefOverlay belief={BELIEF} nodes={NODES} />);
+
+    for (const blob of all(BELIEF_HEAT_TEST_ID)) {
+      expect(blob.getAttribute("fill")).toBe(`url(#${BELIEF_FIELD_GRADIENT_ID})`);
+      expect(blob.getAttribute("class")).toBe(BELIEF_FIELD_CLASSES.blob);
+    }
+    const stops = Array.from(
+      container?.querySelectorAll(`#${BELIEF_FIELD_GRADIENT_ID} stop`) ?? [],
+    );
+    expect(stops).toHaveLength(FIELD.stops.length);
+    for (const stop of stops) expect(stop.getAttribute("stop-color")).toBe(RAMP.fill);
+  });
+
+  it("fades the gradient from a solid core to nothing at the rim", () => {
+    const opacities = FIELD.stops.map((stop) => stop.opacity);
+
+    expect(opacities[0]).toBe(1);
+    expect(opacities.at(-1)).toBe(0);
+    expect([...opacities].sort((first, second) => second - first)).toEqual(opacities);
+  });
+
+  it("blends the blobs additively, isolated from the plate under them", () => {
+    expect(STYLESHEET).toMatch(/\.mh-belief-field\s*\{\s*isolation:\s*isolate/);
+    expect(STYLESHEET).toMatch(/\.mh-belief-field__blob\s*\{\s*mix-blend-mode:\s*plus-lighter/);
+  });
+
+  it("puts a node in the top tier from the contour's threshold of the peak, and no lower", () => {
+    const heats = beliefHeatOf(BELIEF, NODES, RAMP);
+    const warm = heats.find((each) => each.nodeId === WARM)?.heat.intensity ?? Number.NaN;
+
+    expect(warm).toBeLessThan(FIELD.contourFrom);
+    expect(topTierOf(heats, FIELD.contourFrom)).toEqual(new Set([HOT]));
+    expect(topTierOf(heats, warm)).toEqual(new Set([HOT, WARM]));
+  });
+
+  it("marks the top tier on its blobs", async () => {
+    await render(<BeliefOverlay belief={BELIEF} nodes={NODES} />);
+
+    expect(heatFor(HOT)?.getAttribute("data-top-tier")).toBe("true");
+    expect(heatFor(WARM)?.getAttribute("data-top-tier")).toBe("false");
+  });
+
+  it("outlines the top tier with one contour, inside the layer that takes no pointer events", async () => {
+    await render(
+      <MapRenderer
+        view={viewWith(BELIEF)}
+        selection={null}
+        onSelect={() => undefined}
+        overlay={<BeliefOverlay belief={BELIEF} nodes={NODES} />}
+      />,
+    );
+
+    const contour = one(BELIEF_CONTOUR_TEST_ID);
+    expect(all(BELIEF_CONTOUR_TEST_ID)).toHaveLength(1);
+    expect(contour?.getAttribute("data-nodeids")).toBe(String(HOT));
+    expect(contour?.closest(`[data-testid="${MAP_OVERLAY_TEST_ID}"]`)).not.toBeNull();
+    expect(contour?.querySelector("path[stroke-dasharray]")?.getAttribute("stroke")).toBe(
+      FIELD.contourStroke,
+    );
+  });
+
+  it("draws the contour from the bounds it is given", async () => {
+    const wide = { minX: -500, minY: -500, maxX: 500, maxY: 500 };
+    await render(<BeliefOverlay belief={BELIEF} nodes={NODES} bounds={wide} />);
+
+    const outline = one(BELIEF_CONTOUR_TEST_ID)?.querySelector("path")?.getAttribute("d") ?? "";
+    expect(outline).toContain("-500");
+  });
+
+  it("draws no contour when there is no heat", async () => {
+    const empty: Belief = NODES.map((each) => ({ nodeId: each.id, mass: 0 }));
+    await render(<BeliefOverlay belief={empty} nodes={NODES} />);
+
+    expect(one(BELIEF_CONTOUR_TEST_ID)).toBeNull();
   });
 });

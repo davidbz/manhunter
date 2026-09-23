@@ -10,8 +10,8 @@
  * `.tsx` outside the token file.
  *
  * What this file owns is the reset, the ground the board sits on, the screen frame (PLAN M6.2),
- * the focus treatment, and the reduced-motion guard every later task's animation obeys. Panel
- * chrome is PLAN M6.8's and the map surface is M6.4's; neither is styled here.
+ * the panel chrome (PLAN M6.8), the focus treatment, and the reduced-motion guard every later
+ * task's animation obeys. The map surface is M6.4's and is drawn as SVG attributes, not here.
  */
 
 *,
@@ -125,6 +125,7 @@ h3 {
 .mh-frame__map {
   grid-area: map;
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -200,6 +201,527 @@ h3 {
   font-weight: var(--mh-font-weight-bold);
 }
 
+/*
+ * Panel chrome (PLAN M6.8). Every intel and command panel is a card: a raised plane with a
+ * hairline top edge and a small uppercase title, never a box with a border (DESIGN.md "Ground").
+ * State is carried by the `data-*` attributes the components already publish for the tests, so
+ * the styling and the assertions read the same facts and no class name duplicates one.
+ */
+.mh-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-sm);
+  padding: var(--mh-space-md);
+  background: var(--mh-color-surface-overlay);
+  border-radius: var(--mh-radius-card);
+  box-shadow: var(--mh-shadow-card);
+}
+
+.mh-card__title {
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-card__empty {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-visually-hidden {
+  position: absolute;
+  width: var(--mh-border-hairline);
+  height: var(--mh-border-hairline);
+  margin: calc(-1 * var(--mh-border-hairline));
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The skip link past the map's tab stops (PLAN M6.10): hidden exactly like the rule above until it
+ * has keyboard focus, then pinned to the top-left corner over the board, so it is out of the
+ * grid's flow either way and never takes a cell of the frame.
+ */
+.mh-skip-link {
+  position: absolute;
+  width: var(--mh-border-hairline);
+  height: var(--mh-border-hairline);
+  margin: calc(-1 * var(--mh-border-hairline));
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mh-skip-link:focus {
+  position: fixed;
+  top: var(--mh-space-sm);
+  left: var(--mh-space-sm);
+  z-index: 1;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: var(--mh-space-xs) var(--mh-space-md);
+  overflow: visible;
+  clip-path: none;
+  color: var(--mh-color-surface-sunken);
+  background: var(--mh-color-accent);
+  font-family: var(--mh-font-family-display);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-icon {
+  flex: none;
+  width: var(--mh-layout-icon-size);
+  height: var(--mh-layout-icon-size);
+}
+
+.mh-button {
+  padding: var(--mh-space-xs) var(--mh-space-md);
+  color: var(--mh-color-text);
+  background: var(--mh-color-surface-raised);
+  border: var(--mh-border-hairline) solid var(--mh-color-edge-strong);
+  border-radius: var(--mh-radius-chip);
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-small);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mh-button:hover:enabled {
+  border-color: var(--mh-color-accent);
+}
+
+.mh-button:disabled {
+  opacity: var(--mh-fade-disabled);
+  cursor: not-allowed;
+}
+
+.mh-button--quiet {
+  padding: 0 var(--mh-space-sm);
+  color: var(--mh-color-text-muted);
+  background: none;
+  border-color: var(--mh-color-edge-hairline);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-button--commit {
+  padding: var(--mh-space-sm) var(--mh-space-lg);
+  color: var(--mh-color-surface-sunken);
+  background: var(--mh-color-accent);
+  border-color: var(--mh-color-accent);
+  font-size: var(--mh-font-size-large);
+  font-weight: var(--mh-font-weight-black);
+}
+
+.mh-button--commit:hover:enabled {
+  background: var(--mh-color-text);
+  border-color: var(--mh-color-text);
+}
+
+.mh-alert {
+  margin: 0;
+  padding: var(--mh-space-xs) var(--mh-space-sm);
+  background: var(--mh-color-surface-sunken);
+  border-left: var(--mh-border-heavy) solid var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+/*
+ * Segmented meters. The native `<meter>` stays (Biome's `useSemanticElements` insists on it, PLAN
+ * M5.7), and `appearance: none` hands its track and value to the vendor pseudo-elements below,
+ * which is what finally overrides Chromium's green/yellow/red heuristic. The segments are a mask
+ * over the whole element, so track and value are cut by the same gaps: `--mh-meter-segments` is
+ * published on the root as the scaled default and overridden inline on a meter that counts units.
+ *
+ * Hue discipline decides the fills: the player's own resources are cyan, money is gold, and the
+ * two forces acting on the player - pressure and the clock - are not saturated at all.
+ */
+.mh-meters {
+  display: grid;
+  gap: var(--mh-space-sm);
+  margin: 0;
+}
+
+.mh-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--mh-space-sm);
+  row-gap: var(--mh-space-xs);
+}
+
+.mh-meter__label {
+  color: var(--mh-color-text-muted);
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-xs);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-meter__reading {
+  display: contents;
+}
+
+.mh-meter__value {
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-small);
+  font-weight: var(--mh-font-weight-bold);
+  text-align: right;
+}
+
+.mh-meter__bar {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  height: var(--mh-meter-height);
+  appearance: none;
+  background: var(--mh-color-surface-sunken);
+  border: 0;
+  border-radius: var(--mh-radius-none);
+  mask-image: repeating-linear-gradient(
+    to right,
+    var(--mh-color-mask-ink) 0,
+    var(--mh-color-mask-ink) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
+    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
+    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments))
+  );
+}
+
+.mh-meter__bar::-webkit-meter-bar {
+  height: var(--mh-meter-height);
+  background: var(--mh-color-surface-sunken);
+  border: 0;
+  border-radius: var(--mh-radius-none);
+}
+
+.mh-meter__bar::-webkit-meter-optimum-value,
+.mh-meter__bar::-webkit-meter-suboptimum-value,
+.mh-meter__bar::-webkit-meter-even-less-good-value {
+  background: var(--mh-color-accent);
+}
+
+.mh-meter__bar::-moz-meter-bar {
+  background: var(--mh-color-accent);
+}
+
+.mh-meter[data-meter="budget"] .mh-meter__bar::-webkit-meter-optimum-value {
+  background: var(--mh-color-exit-gold);
+}
+
+.mh-meter[data-meter="budget"] .mh-meter__bar::-moz-meter-bar {
+  background: var(--mh-color-exit-gold);
+}
+
+.mh-meter[data-meter="pressure"] .mh-meter__bar::-webkit-meter-optimum-value,
+.mh-meter[data-meter="clock"] .mh-meter__bar::-webkit-meter-optimum-value {
+  background: var(--mh-color-text-muted);
+}
+
+.mh-meter[data-meter="pressure"] .mh-meter__bar::-moz-meter-bar,
+.mh-meter[data-meter="clock"] .mh-meter__bar::-moz-meter-bar {
+  background: var(--mh-color-text-muted);
+}
+
+/*
+ * The report feed reads as a dispatch log: monospace throughout (DESIGN.md "Type"), a source face
+ * and a reliability badge on each line, and the age of what was seen written as a stamp. A report
+ * that landed this turn carries the cyan edge; an old one recedes, because the gap between seen
+ * and told is the game (DESIGN.md's first pillar).
+ */
+.mh-feed {
+  font-family: var(--mh-font-family);
+}
+
+.mh-feed__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mh-feed__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--mh-space-sm);
+  padding: var(--mh-space-sm);
+  border-top: var(--mh-border-hairline) solid var(--mh-color-edge-hairline);
+  border-left: var(--mh-border-heavy) solid var(--mh-color-surface-overlay);
+}
+
+.mh-feed__row[data-new="true"] {
+  background: var(--mh-color-surface-raised);
+  border-left-color: var(--mh-color-accent);
+}
+
+.mh-feed__row[data-staleness="aging"] {
+  color: var(--mh-color-text-muted);
+}
+
+/*
+ * The colour step alone carries a stale row's recession. It used to be faded as well, which put
+ * the text under the contrast floor PLAN M6.10's audit measures; the map pin still fades, because
+ * a pin is a mark rather than text to read.
+ */
+.mh-feed__row[data-staleness="stale"] {
+  color: var(--mh-color-text-dim);
+}
+
+.mh-feed__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-hair);
+  min-width: 0;
+}
+
+.mh-feed__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--mh-space-xs) var(--mh-space-sm);
+}
+
+.mh-feed__source {
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-small);
+  font-weight: var(--mh-font-weight-black);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-feed__age {
+  margin-left: auto;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-feed__content {
+  font-size: var(--mh-font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.mh-feed__times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--mh-space-md);
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-feed__overflow {
+  margin: 0;
+  color: var(--mh-color-text-dim);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-badge {
+  padding: 0 var(--mh-space-xs);
+  color: var(--mh-color-text-muted);
+  border: var(--mh-border-hairline) solid var(--mh-color-edge-strong);
+  border-radius: var(--mh-radius-chip);
+  font-size: var(--mh-font-size-xs);
+  text-decoration: none;
+  cursor: help;
+}
+
+.mh-badge[data-reliability="high"] {
+  color: var(--mh-color-text);
+  border-color: var(--mh-color-text-muted);
+}
+
+.mh-badge[data-reliability="low"] {
+  color: var(--mh-color-text-dim);
+  border-style: dashed;
+}
+
+/*
+ * The action board: one tile per action, a stencil icon, a chip per resource. The armed tile is
+ * the player's tool, so it takes the cyan; an unaffordable tile stays on the board, hatched and
+ * faded, with the chip it cannot cover struck through.
+ */
+.mh-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--mh-layout-tile-min), 1fr));
+  gap: var(--mh-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mh-board__slot {
+  display: flex;
+}
+
+.mh-tile {
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "cost cost"
+    "status status";
+  align-items: center;
+  gap: var(--mh-space-xs) var(--mh-space-sm);
+  padding: var(--mh-space-sm);
+  color: var(--mh-color-text);
+  background: var(--mh-color-surface-raised);
+  border: var(--mh-border-hairline) solid var(--mh-color-edge-hairline);
+  border-top: var(--mh-border-heavy) solid var(--mh-color-edge-strong);
+  border-radius: var(--mh-radius-card);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mh-tile > .mh-icon {
+  grid-area: icon;
+}
+
+.mh-tile:hover:enabled {
+  border-top-color: var(--mh-color-accent);
+}
+
+.mh-tile[aria-pressed="true"] {
+  color: var(--mh-color-accent);
+  background: var(--mh-color-surface-sunken);
+  border-color: var(--mh-color-accent);
+}
+
+.mh-tile:disabled {
+  opacity: var(--mh-fade-disabled);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--mh-color-surface-raised) 0,
+    var(--mh-color-surface-raised) var(--mh-space-xs),
+    var(--mh-color-surface-sunken) var(--mh-space-xs),
+    var(--mh-color-surface-sunken) var(--mh-space-sm)
+  );
+  cursor: not-allowed;
+}
+
+.mh-tile__label {
+  grid-area: label;
+  font-family: var(--mh-font-family-display);
+  font-weight: var(--mh-font-weight-black);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-tile__cost {
+  grid-area: cost;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mh-space-xs);
+}
+
+.mh-tile__status {
+  grid-area: status;
+  color: var(--mh-color-text-muted);
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-xs);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-chip {
+  padding: 0 var(--mh-space-xs);
+  color: var(--mh-color-text);
+  background: var(--mh-color-surface-sunken);
+  border: var(--mh-border-hairline) solid var(--mh-color-edge-hairline);
+  border-radius: var(--mh-radius-chip);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-chip[data-chip="budget"] {
+  color: var(--mh-color-exit-gold);
+}
+
+.mh-chip[data-short="true"] {
+  color: var(--mh-color-text-dim);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+.mh-board__draft {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-board__draft[data-ready="true"] {
+  color: var(--mh-color-accent);
+}
+
+/*
+ * The dispatch order: a ruled form of numbered lines with End Turn signed at the foot. The card
+ * does not scroll as a whole - only its lines do - so however long the order gets, End Turn stays
+ * inside the command bar.
+ */
+.mh-frame__command > .mh-order {
+  overflow: hidden;
+}
+
+.mh-order > * {
+  flex: none;
+}
+
+.mh-order__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--mh-space-sm);
+}
+
+.mh-order__count {
+  color: var(--mh-color-text-muted);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-order > .mh-order__lines {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mh-order__line {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--mh-space-sm);
+  padding: var(--mh-space-xs) 0;
+  border-bottom: var(--mh-border-hairline) dashed var(--mh-color-edge-strong);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-order__number {
+  color: var(--mh-color-text-dim);
+}
+
+.mh-order__summary {
+  overflow-wrap: anywhere;
+}
+
+.mh-order > .mh-button--commit {
+  margin-top: auto;
+}
+
 ::selection {
   background: var(--mh-color-accent);
   color: var(--mh-color-surface-sunken);
@@ -216,6 +738,428 @@ h3 {
 }
 
 /*
+ * The map's targets (PLAN M6.5). A box-shadow draws nothing on SVG, so a node or edge shows focus
+ * through its own `.mh-map-focus` outline, drawn hidden by `mapactors.tsx` and revealed here.
+ * Hover lights the pip's plate and the road's casing in the instrument cyan. A target the armed
+ * action cannot use recedes to the disabled fade but keeps its pointer events: dimming changes how
+ * it looks, never what a click on it reports.
+ */
+.mh-map-target {
+  cursor: pointer;
+}
+
+.mh-map-target:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.mh-map-focus {
+  opacity: 0;
+}
+
+.mh-map-target:focus-visible .mh-map-focus {
+  opacity: 1;
+}
+
+.mh-map-node:not([data-selectable="false"]):hover .mh-map-pip__plate,
+.mh-map-edge:not([data-selectable="false"]):hover [data-layer="casing"] {
+  stroke: var(--mh-color-accent);
+}
+
+.mh-map-target[data-selectable="false"] {
+  opacity: var(--mh-fade-disabled);
+  cursor: default;
+}
+
+.mh-map-reticle {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/*
+ * The belief field (PLAN M6.6). The blobs add into each other, so two suspected neighbours run
+ * together into one hot region, and the group is isolated so the blend stops at the field: the
+ * blocks and roads beneath are never lightened by it.
+ */
+.mh-belief-field {
+  isolation: isolate;
+}
+
+.mh-belief-field__blob {
+  mix-blend-mode: plus-lighter;
+}
+
+/* A report pin fades through the feed's own age tiers (PLAN M6.6); a fresh pin is at full strength. */
+.mh-map-pin[data-staleness="aging"] {
+  opacity: var(--mh-fade-aging);
+}
+
+.mh-map-pin[data-staleness="stale"] {
+  opacity: var(--mh-fade-stale);
+}
+
+/* The map's key, a strip under the plate so it covers nothing on it (PLAN M6.6). */
+.mh-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mh-space-xs) var(--mh-space-lg);
+  margin: 0;
+  padding: var(--mh-space-xs) var(--mh-space-md);
+  list-style: none;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-xs);
+  background: var(--mh-color-surface-raised);
+}
+
+.mh-map-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mh-space-xs);
+}
+
+.mh-map-legend__ramp {
+  width: var(--mh-layout-legend-ramp-width);
+  height: var(--mh-layout-legend-ramp-height);
+}
+
+.mh-map-legend__pin {
+  width: var(--mh-layout-legend-pin);
+  height: var(--mh-layout-legend-pin);
+}
+
+/*
+ * The case briefing (PLAN M6.9): a readable column, the case rules beside the redacted dossier and
+ * the form that opens the hunt.
+ */
+.mh-briefing {
+  display: grid;
+  grid-template-areas:
+    "header header"
+    "rules dossier"
+    "rules assignment";
+  grid-template-columns: minmax(0, 1fr) var(--mh-layout-briefing-side-width);
+  grid-template-rows: auto auto 1fr;
+  gap: var(--mh-space-lg);
+  max-width: var(--mh-layout-briefing-width);
+  margin: 0 auto;
+}
+
+.mh-briefing__header {
+  grid-area: header;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-xs);
+}
+
+.mh-briefing__kicker,
+.mh-banner__verdict {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-family: var(--mh-font-family-display);
+  font-size: var(--mh-font-size-small);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-briefing__lede {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+}
+
+.mh-briefing__rules {
+  grid-area: rules;
+}
+
+.mh-briefing__dossier {
+  grid-area: dossier;
+  align-items: center;
+  text-align: center;
+}
+
+.mh-briefing__assignment {
+  grid-area: assignment;
+}
+
+.mh-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-md);
+  margin: 0;
+}
+
+.mh-rules__item {
+  padding-left: var(--mh-space-md);
+  border-left: var(--mh-border-heavy) solid var(--mh-color-edge-strong);
+}
+
+.mh-rules__item[data-item="objective"] {
+  border-left-color: var(--mh-color-exit-gold);
+}
+
+.mh-rules__title {
+  font-family: var(--mh-font-family-display);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-rules__detail {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-form {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--mh-space-sm) var(--mh-space-md);
+}
+
+.mh-form__label {
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-form__field {
+  min-width: 0;
+  padding: var(--mh-space-xs) var(--mh-space-sm);
+  color: var(--mh-color-text);
+  background: var(--mh-color-surface-sunken);
+  /* A field's edge is how it reads as a field, so it meets WCAG 1.4.11's 3:1 (PLAN M6.10). */
+  border: var(--mh-border-hairline) solid var(--mh-color-text-dim);
+  border-radius: var(--mh-radius-chip);
+  font: inherit;
+}
+
+.mh-form__error,
+.mh-form__submit {
+  grid-column: 1 / -1;
+}
+
+/*
+ * The debrief (PLAN M6.9): the report across the top, the replay in the dominant column, and the
+ * case file beside it. One viewport tall where it fits; the replay map's floor makes a short
+ * viewport scroll the screen instead of crushing the city.
+ */
+.mh-debrief {
+  display: grid;
+  grid-template-areas:
+    "report report"
+    "replay side";
+  grid-template-columns: minmax(0, 1fr) var(--mh-layout-debrief-side-width);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--mh-space-lg);
+  height: 100%;
+}
+
+.mh-debrief__report {
+  grid-area: report;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--mh-space-lg);
+}
+
+.mh-debrief__side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-md);
+  min-height: 0;
+  overflow: auto;
+}
+
+.mh-debrief__side .mh-card {
+  align-items: stretch;
+}
+
+.mh-banner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--mh-space-xs);
+  padding: var(--mh-space-md) var(--mh-space-lg);
+  background: var(--mh-color-surface-overlay);
+  border-left: var(--mh-border-heavy) solid var(--mh-color-incident-red);
+  box-shadow: var(--mh-shadow-card);
+}
+
+.mh-banner[data-outcome="captured"] {
+  border-left-color: var(--mh-color-exit-gold);
+}
+
+.mh-banner__turn {
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+/* The score as a receipt read left to right: base, each component, then the total in gold. */
+.mh-tally {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--mh-space-hair);
+  margin: 0;
+  background: var(--mh-color-surface-sunken);
+}
+
+.mh-tally__row {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--mh-space-xs);
+  padding: var(--mh-space-sm) var(--mh-space-md);
+  background: var(--mh-color-surface-overlay);
+}
+
+.mh-tally__row dt {
+  display: flex;
+  flex-direction: column;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-xs);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+}
+
+.mh-tally__measured {
+  color: var(--mh-color-text);
+  font-size: var(--mh-font-size-small);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.mh-tally__points {
+  margin: 0;
+  font-size: var(--mh-font-size-large);
+  font-weight: var(--mh-font-weight-bold);
+}
+
+.mh-tally__row[data-sign="penalty"] .mh-tally__points {
+  color: var(--mh-color-text-muted);
+}
+
+.mh-tally__row--total {
+  border-top: var(--mh-border-heavy) solid var(--mh-color-exit-gold);
+}
+
+.mh-tally__row.mh-tally__row--total .mh-tally__points {
+  color: var(--mh-color-exit-gold);
+  font-size: var(--mh-font-size-display);
+}
+
+.mh-replay {
+  grid-area: replay;
+  display: grid;
+  grid-template-rows: minmax(var(--mh-layout-replay-map-min), 1fr) auto auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--mh-color-surface-sunken);
+  box-shadow: var(--mh-shadow-card);
+}
+
+/* The replay map's sized container, the `.mh-frame__map` rule for the debrief. */
+.mh-replay__map {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mh-color-background);
+}
+
+.mh-replay__map > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mh-scrubber {
+  display: flex;
+  align-items: center;
+  gap: var(--mh-space-md);
+  padding: var(--mh-space-sm) var(--mh-space-md);
+  background: var(--mh-color-surface-raised);
+}
+
+.mh-scrubber__transport {
+  display: flex;
+  gap: var(--mh-space-xs);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mh-scrubber__step {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--mh-space-xs);
+  color: var(--mh-color-text);
+}
+
+.mh-scrubber__track {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--mh-color-accent);
+}
+
+.mh-scrubber__readout {
+  margin: 0;
+  font-family: var(--mh-font-family-display);
+  font-weight: var(--mh-font-weight-bold);
+  letter-spacing: var(--mh-font-tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mh-scrubber__of {
+  color: var(--mh-color-text-muted);
+}
+
+.mh-share {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-sm);
+}
+
+.mh-share__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mh-space-xs);
+  margin: 0;
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-share__url {
+  max-height: var(--mh-layout-share-url-max-height);
+  overflow: auto;
+  padding: var(--mh-space-xs) var(--mh-space-sm);
+  color: var(--mh-color-accent);
+  background: var(--mh-color-surface-sunken);
+  font-size: var(--mh-font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.mh-share__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mh-space-sm);
+}
+
+.mh-share__status {
+  color: var(--mh-color-text-muted);
+  font-size: var(--mh-font-size-small);
+}
+
+.mh-share__status[data-result="copied"] {
+  color: var(--mh-color-text);
+}
+
+/*
  * DESIGN.md: "Motion is confirmation, never decoration." Anyone who has asked their system to stop
  * moving things gets the confirmation without the movement.
  *
@@ -226,11 +1170,103 @@ h3 {
  * worked *because* of the `!important`: a universal selector has no specificity, so without it the
  * reset loses to every component rule it is meant to override. Opting in has no such hole, needs
  * no escape hatch, and fails safe when someone forgets - a missed block means no animation, not an
- * unstoppable one. PLAN M6.10 asserts the guarantee holds once there are animations to assert it
- * over.
+ * unstoppable one. `tools/theme/reducedmotion.test.ts` (PLAN M6.10) fails if an animation, a
+ * transition or a keyframes rule appears anywhere outside such a block.
+ *
+ * The five moments that move (PLAN M6.10, `MOTION` in `theme.ts`) all replay by remounting: the
+ * component keys the element by what it shows, so a new reading is a new element and its
+ * animation runs once, on arrival, and never loops. Every travel is toward the negative side
+ * (up, or from the left), where overflow is clipped rather than scrollable, so no region grows a
+ * scrollbar for the length of an animation.
  */
 @media (prefers-reduced-motion: no-preference) {
   :focus-visible {
     transition: box-shadow var(--mh-motion-duration-fast) var(--mh-motion-ease-out);
+  }
+
+  .mh-map-target {
+    transition: opacity var(--mh-motion-duration-fast) var(--mh-motion-ease-out);
+  }
+
+  .mh-map-reticle {
+    animation: mh-map-lock-on var(--mh-motion-duration-base) var(--mh-motion-ease-out);
+  }
+
+  @keyframes mh-map-lock-on {
+    from {
+      opacity: 0;
+      transform: scale(var(--mh-motion-lock-on-scale));
+    }
+  }
+
+  /* Turn advance: the rail's clock ticks over to the hour the ended turn moved it to. */
+  .mh-rail__item[data-rail="clock"] .mh-rail__value {
+    animation: mh-turn-advance var(--mh-motion-turn-advance) var(--mh-motion-ease-out);
+  }
+
+  @keyframes mh-turn-advance {
+    from {
+      opacity: 0;
+      transform: translateY(calc(-1 * var(--mh-motion-arrival-offset)));
+    }
+  }
+
+  /* Report arrival: this turn's rows drop into the feed, and their pins onto the map. */
+  .mh-feed__row[data-new="true"],
+  .mh-map-pin[data-new="true"] {
+    animation: mh-report-arrival var(--mh-motion-report-arrival) var(--mh-motion-ease-out);
+  }
+
+  @keyframes mh-report-arrival {
+    from {
+      opacity: 0;
+      transform: translateY(calc(-1 * var(--mh-motion-arrival-offset)));
+    }
+  }
+
+  /* Meter movement: a reading that changed flashes the instrument cyan, then settles. */
+  .mh-meter__value {
+    animation: mh-meter-movement var(--mh-motion-meter-movement) var(--mh-motion-ease-standard);
+  }
+
+  @keyframes mh-meter-movement {
+    from {
+      color: var(--mh-color-accent);
+    }
+  }
+
+  /* Checkpoint fire: the barrier drops onto the road the way the reticle locks on. */
+  .mh-map-checkpoint {
+    animation: mh-checkpoint-fire var(--mh-motion-checkpoint-fire) var(--mh-motion-ease-out);
+  }
+
+  @keyframes mh-checkpoint-fire {
+    from {
+      opacity: 0;
+      transform: scale(var(--mh-motion-lock-on-scale));
+    }
+  }
+
+  /* Outcome sting: the verdict lands, then the tally is read out under it. */
+  .mh-banner {
+    animation: mh-outcome-sting var(--mh-motion-outcome-sting) var(--mh-motion-ease-out);
+  }
+
+  .mh-tally__row {
+    animation: mh-outcome-tally var(--mh-motion-outcome-sting) var(--mh-motion-ease-out)
+      var(--mh-motion-outcome-sting) backwards;
+  }
+
+  @keyframes mh-outcome-sting {
+    from {
+      opacity: 0;
+      transform: translateX(calc(-1 * var(--mh-motion-arrival-offset)));
+    }
+  }
+
+  @keyframes mh-outcome-tally {
+    from {
+      opacity: 0;
+    }
   }
 }

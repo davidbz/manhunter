@@ -16,6 +16,10 @@
  * captured-alive bonus) is a compile error here until this table says what it is called, so a
  * new component cannot silently go unrendered. `OUTCOME_LABELS` is the same table over
  * `FinishedOutcome["kind"]`.
+ *
+ * PLAN M6.9 turned it into the debrief's report: an outcome banner (a verdict kicker over the
+ * outcome heading) and the breakdown as a tally, each row carrying `data-sign` so the stylesheet
+ * can colour a bonus apart from a penalty without reading the number.
  */
 
 import type { GameOutcome, ScoreBreakdown, ScoreComponentKind } from "@manhunter/core";
@@ -58,45 +62,85 @@ const NO_POINTS = 0;
 const signed = (points: number): string =>
   points > NO_POINTS ? `${POSITIVE_SIGN}${points}` : String(points);
 
+/**
+ * The banner's kicker (PLAN M6.9): one verdict per way a hunt ends, over the same outcome kinds
+ * `OUTCOME_LABELS` names, so a sixth outcome is a compile error here too.
+ */
+const VERDICT_LABELS: Readonly<Record<FinishedOutcome["kind"], string>> = {
+  captured: "Case closed",
+  escaped: "Case lost",
+  trust_collapsed: "Case lost",
+  casualties_exceeded: "Case lost",
+  timed_out: "Case lost",
+};
+
+type TallySign = "bonus" | "penalty" | "nil";
+
+const signOf = (points: number): TallySign => {
+  if (points > NO_POINTS) return "bonus";
+  return points < NO_POINTS ? "penalty" : "nil";
+};
+
 export const EndScreen = ({ breakdown }: EndScreenProps) => {
   if (breakdown.outcome.kind === "in_progress") return null;
   const outcome = breakdown.outcome;
 
   return (
-    <section aria-label={END_SCREEN_LABEL} data-testid={END_SCREEN_TEST_ID}>
-      <h2
-        data-testid={END_SCREEN_OUTCOME_TEST_ID}
-        data-outcome={outcome.kind}
-        data-turn={outcome.turn}
-      >
-        {OUTCOME_LABELS[outcome.kind]}
-      </h2>
-      <p>
-        {ON_TURN_PREFIX}
-        {outcome.turn}
-      </p>
-      <dl data-testid={SCORE_BREAKDOWN_TEST_ID}>
-        <div data-testid={SCORE_BASE_TEST_ID} data-points={breakdown.base}>
+    <section
+      className="mh-debrief__report"
+      aria-label={END_SCREEN_LABEL}
+      data-testid={END_SCREEN_TEST_ID}
+    >
+      <header className="mh-banner" data-outcome={outcome.kind}>
+        <p className="mh-banner__verdict">{VERDICT_LABELS[outcome.kind]}</p>
+        <h2
+          className="mh-banner__outcome"
+          data-testid={END_SCREEN_OUTCOME_TEST_ID}
+          data-outcome={outcome.kind}
+          data-turn={outcome.turn}
+        >
+          {OUTCOME_LABELS[outcome.kind]}
+        </h2>
+        <p className="mh-banner__turn">
+          {ON_TURN_PREFIX}
+          {outcome.turn}
+        </p>
+      </header>
+      <dl className="mh-tally" data-testid={SCORE_BREAKDOWN_TEST_ID}>
+        <div
+          className="mh-tally__row"
+          data-testid={SCORE_BASE_TEST_ID}
+          data-points={breakdown.base}
+          data-sign={signOf(breakdown.base)}
+        >
           <dt>Base</dt>
-          <dd>{signed(breakdown.base)}</dd>
+          <dd className="mh-tally__points">{signed(breakdown.base)}</dd>
         </div>
         {breakdown.components.map((component) => (
           <div
             key={component.kind}
+            className="mh-tally__row"
             data-testid={SCORE_COMPONENT_TEST_ID}
             data-kind={component.kind}
             data-measured={component.measured}
             data-points={component.points}
+            data-sign={signOf(component.points)}
           >
-            <dt>{SCORE_COMPONENT_LABELS[component.kind]}</dt>
-            <dd>
-              {component.measured} ({signed(component.points)})
-            </dd>
+            <dt>
+              {SCORE_COMPONENT_LABELS[component.kind]}
+              <span className="mh-tally__measured">{component.measured}</span>
+            </dt>
+            <dd className="mh-tally__points">{signed(component.points)}</dd>
           </div>
         ))}
-        <div data-testid={SCORE_TOTAL_TEST_ID} data-points={breakdown.total}>
+        <div
+          className="mh-tally__row mh-tally__row--total"
+          data-testid={SCORE_TOTAL_TEST_ID}
+          data-points={breakdown.total}
+          data-sign={signOf(breakdown.total)}
+        >
           <dt>Total</dt>
-          <dd>{signed(breakdown.total)}</dd>
+          <dd className="mh-tally__points">{signed(breakdown.total)}</dd>
         </div>
       </dl>
     </section>

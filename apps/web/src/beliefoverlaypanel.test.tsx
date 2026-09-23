@@ -3,7 +3,7 @@ import { BALANCE } from "@manhunter/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { BELIEF_HEAT_TEST_ID } from "./beliefoverlay";
+import { BELIEF_CONTOUR_TEST_ID, BELIEF_HEAT_TEST_ID } from "./beliefoverlay";
 import { BeliefOverlayPanel } from "./beliefoverlaypanel";
 import { createGameStore, type GameStore } from "./gamestore";
 import { GameStoreProvider } from "./storecontext";
@@ -73,5 +73,15 @@ describe("the connected heatmap panel", () => {
 
     expect(heat()).toHaveLength(suspected.length);
     expect(suspected.length).toBeGreaterThan(0);
+  });
+
+  it("outlines the hunt's top tier once one has started (PLAN M6.6)", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+
+    await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));
+
+    const contour = container?.querySelector(`[data-testid="${BELIEF_CONTOUR_TEST_ID}"]`);
+    expect(contour?.getAttribute("data-nodeids")?.length).toBeGreaterThan(0);
   });
 });

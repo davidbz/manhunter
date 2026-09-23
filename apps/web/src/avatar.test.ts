@@ -7,6 +7,7 @@ import {
   type Avatar,
   avatarOf,
   REDACTED_AVATAR,
+  textSeedOf,
 } from "./avatar";
 
 /**
@@ -103,5 +104,20 @@ describe("the redacted avatar", () => {
 
   test.prop([arbitrarySeed])("is never what a seed draws for the criminal", (seed) => {
     expect(looksOf(avatarOf(seed, "criminal"))).not.toBe(looksOf(REDACTED_AVATAR));
+  });
+});
+
+describe("a text seed", () => {
+  test.prop([fc.string()])("is the same unsigned 32-bit seed every time", (text) => {
+    const seed = textSeedOf(text);
+
+    expect(textSeedOf(text)).toBe(seed);
+    expect(Number.isInteger(seed)).toBe(true);
+    expect(seed).toBeGreaterThanOrEqual(0);
+    expect(seed).toBeLessThanOrEqual(0xffff_ffff);
+  });
+
+  it("differs between two neighbouring ids", () => {
+    expect(textSeedOf("report-1")).not.toBe(textSeedOf("report-2"));
   });
 });

@@ -1,6 +1,9 @@
 import type {
   Containment,
   DistrictType,
+  EdgeKind,
+  ExitKind,
+  HunterEvent,
   HunterView,
   MapEdge,
   MapNode,
@@ -31,13 +34,31 @@ import {
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import STYLESHEET from "./index.css?raw";
 import {
+  EDGE_LAYERS,
+  MAP_BLOCK_CELL_TEST_ID,
+  MAP_BLOCK_TEST_ID,
+  MAP_BRIDGE_DECK_TEST_ID,
+  MAP_CHECKPOINT_TEST_ID,
+  MAP_CLASSES,
   MAP_EDGE_TEST_ID,
+  MAP_EXIT_GATE_TEST_ID,
+  MAP_EXIT_GATES_TEST_ID,
+  MAP_FOCUS_TEST_ID,
+  MAP_INCIDENT_RING_TEST_ID,
+  MAP_INCIDENT_TEST_ID,
+  MAP_INCIDENTS_TEST_ID,
   MAP_NODE_TEST_ID,
   MAP_OVERLAY_TEST_ID,
+  MAP_PIP_TEST_ID,
+  MAP_PLATE_TEST_ID,
+  MAP_RIVER_CHANNEL_TEST_ID,
+  MAP_RIVER_CURRENT_TEST_ID,
   MAP_RIVER_TEST_ID,
   MAP_SELECTION_TEST_ID,
   MAP_TEST_ID,
+  MAP_WASH_TEST_ID,
   MapRenderer,
   type MapSelection,
   ROAD_GLOW_FILTER_ID,
@@ -90,6 +111,7 @@ const viewWith = (
     readonly river?: boolean;
     readonly edges?: readonly MapEdge[];
     readonly containments?: readonly Containment[];
+    readonly events?: readonly HunterEvent[];
   } = {},
 ): HunterView => ({
   clock: makeClock(START_HOUR, NOW),
@@ -105,7 +127,7 @@ const viewWith = (
     containments: parts.containments ?? [],
   },
   reports: [],
-  events: [],
+  events: parts.events ?? [],
   belief: uniformBelief(NODES.map((each) => each.id)),
   casualties: 0,
   turnsRemaining: TURNS_REMAINING,
@@ -199,7 +221,8 @@ describe("the map renderer", () => {
   it("draws the river a view carries", async () => {
     await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
 
-    expect(one(MAP_RIVER_TEST_ID)?.getAttribute("points")).toBe("0,35 50,35");
+    expect(one(MAP_RIVER_TEST_ID)).not.toBeNull();
+    expect(one(MAP_RIVER_CURRENT_TEST_ID)?.getAttribute("points")).toBe("0,35 50,35");
   });
 
   it("draws no river on a city that has none", async () => {
@@ -397,5 +420,371 @@ describe("the map renderer on a generated city", () => {
     expect(all(MAP_NODE_TEST_ID)).toHaveLength(view.map.nodes.length);
     expect(all(MAP_EDGE_TEST_ID)).toHaveLength(view.map.edges.length);
     expect(one(MAP_RIVER_TEST_ID)).not.toBeNull();
+  });
+});
+
+/**
+ * PLAN M6.4's map surface, asserted structurally: which layers exist, what they carry, and the
+ * order they are drawn in. Never pixels; the look is judged by eye in the running app.
+ */
+describe("the map surface", () => {
+  const DISTRICTS: readonly DistrictType[] = [
+    "downtown",
+    "residential",
+    "suburb",
+    "industrial",
+    "park",
+    "transit_hub",
+    "exit",
+  ];
+  const EXIT_KINDS: readonly ExitKind[] = ["airport", "port", "border", "highway"];
+  const EDGE_KINDS: readonly EdgeKind[] = ["road", "footpath", "rail", "tunnel", "bridge"];
+  const SPACING = 100;
+  const NIGHT_TURN = 13;
+
+  const cityNodes: readonly MapNode[] = DISTRICTS.map((districtType, index) =>
+    node(makeNodeId(`n-${districtType}`), districtType, index * SPACING, 0),
+  );
+  const exitNodes: readonly MapNode[] = EXIT_KINDS.map((kind, index) =>
+    node(makeNodeId(`n-exit-${kind}`), "exit", index * SPACING, SPACING * 2),
+  );
+  const nodeIdAt = (index: number): NodeId => cityNodes[index]?.id ?? makeNodeId("n-missing");
+  const kindEdges: readonly MapEdge[] = EDGE_KINDS.map((kind, index) =>
+    makeEdge(kind, makeEdgeId(`e-${kind}`), nodeIdAt(index), nodeIdAt(index + 1)),
+  );
+  const crossing = makeEdgeId("e-crossing");
+  const clearOfRiver = makeEdgeId("e-clear");
+  const bridges: readonly MapEdge[] = [
+    makeEdge("bridge", crossing, nodeIdAt(0), exitNodes[0]?.id ?? makeNodeId("n-missing")),
+    makeEdge("bridge", clearOfRiver, nodeIdAt(1), nodeIdAt(2)),
+  ];
+
+  const surfaceView = (turn: number): HunterView => {
+    const base = viewWith();
+
+    return {
+      ...base,
+      clock: makeClock(START_HOUR, turn),
+      map: {
+        nodes: [...cityNodes, ...exitNodes],
+        edges: [...kindEdges, ...bridges],
+        exits: exitNodes.map((each, index) => makeExit(each.id, EXIT_KINDS[index] ?? "border")),
+        river: {
+          points: [
+            { x: -SPACING, y: SPACING },
+            { x: SPACING * 3, y: SPACING },
+            { x: SPACING * 3, y: SPACING },
+            { x: SPACING * 7, y: SPACING },
+          ],
+        },
+        incidentNodeId: nodeIdAt(0),
+      },
+    };
+  };
+
+  const renderSurface = (turn = NOW) =>
+    render(<MapRenderer view={surfaceView(turn)} selection={null} onSelect={nothingSelected} />);
+
+  const drawnBefore = (earlier: Element | null, later: Element | null): boolean =>
+    earlier !== null &&
+    later !== null &&
+    Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("draws one block per district type, each filled with its own pattern and tone", async () => {
+    await renderSurface();
+
+    const blocks = all(MAP_BLOCK_TEST_ID);
+    expect(blocks.map((each) => each.getAttribute("data-district"))).toEqual(DISTRICTS);
+    const tones = DISTRICTS.map((districtType) =>
+      container?.querySelector(`pattern#map-block-${districtType} rect`)?.getAttribute("fill"),
+    );
+    expect(new Set(tones).size).toBe(DISTRICTS.length);
+    const fills = blocks.map((each) => each.getAttribute("fill"));
+    expect(new Set(fills).size).toBe(DISTRICTS.length);
+    for (const fill of fills) expect(fill).toMatch(/^url\(#map-block-/);
+  });
+
+  it("gives every node a block footprint of its own", async () => {
+    await renderSurface();
+
+    const footprints = all(MAP_BLOCK_CELL_TEST_ID).map((each) => each.getAttribute("data-nodeid"));
+    expect(new Set(footprints).size).toBe(cityNodes.length + exitNodes.length);
+  });
+
+  it("builds the river as a channel with a dashed current down the course", async () => {
+    await renderSurface();
+
+    const channel = one(MAP_RIVER_CHANNEL_TEST_ID);
+    expect(channel?.tagName).toBe("polygon");
+    expect(channel?.getAttribute("points")?.split(" ").length).toBeGreaterThan(2);
+    expect(one(MAP_RIVER_CURRENT_TEST_ID)?.getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(one(MAP_RIVER_TEST_ID)?.contains(channel ?? null)).toBe(true);
+  });
+
+  it("lays a deck under every bridge that crosses the river and none under one that does not", async () => {
+    await renderSurface();
+
+    const decks = all(MAP_BRIDGE_DECK_TEST_ID).map((each) => each.getAttribute("data-edgeid"));
+    expect(decks).toContain(String(crossing));
+    expect(decks).not.toContain(String(clearOfRiver));
+    expect(decks).toHaveLength(1);
+  });
+
+  it("draws each edge kind as casing plus fill with a treatment of its own", async () => {
+    await renderSurface();
+
+    const treatments = EDGE_KINDS.map((kind) => {
+      const edge = withAttribute(MAP_EDGE_TEST_ID, "data-edgeid", `e-${kind}`)[0];
+      const layer = (name: string) => edge?.querySelector(`[data-layer="${name}"]`);
+      const casing = layer(EDGE_LAYERS.casing);
+      const fill = layer(EDGE_LAYERS.fill);
+      expect(layer(EDGE_LAYERS.glow)).not.toBeNull();
+
+      return [
+        casing?.getAttribute("stroke-width"),
+        casing?.getAttribute("stroke-dasharray"),
+        fill?.getAttribute("stroke"),
+        fill?.getAttribute("stroke-width"),
+        fill?.getAttribute("stroke-dasharray"),
+      ].join("|");
+    });
+    expect(new Set(treatments).size).toBe(EDGE_KINDS.length);
+  });
+
+  it("marks every exit with a gate carrying its own kind", async () => {
+    await renderSurface();
+
+    const gates = all(MAP_EXIT_GATE_TEST_ID);
+    expect(gates.map((each) => each.getAttribute("data-exit"))).toEqual(EXIT_KINDS);
+    const glyphs = gates.map((each) => each.querySelector("path")?.getAttribute("d"));
+    expect(new Set(glyphs).size).toBe(EXIT_KINDS.length);
+    expect(one(MAP_EXIT_GATES_TEST_ID)?.getAttribute("style")).toContain("pointer-events: none");
+  });
+
+  it("washes the map for the hour on the clock, day at noon and night at ten", async () => {
+    await renderSurface(NOW);
+    expect(one(MAP_WASH_TEST_ID)?.getAttribute("data-timeofday")).toBe("day");
+    expect(one(MAP_TEST_ID)?.getAttribute("data-timeofday")).toBe("day");
+    const dayOpacity = Number(one(MAP_WASH_TEST_ID)?.getAttribute("fill-opacity"));
+
+    await act(async () => root?.unmount());
+    container?.remove();
+    await renderSurface(NIGHT_TURN);
+    expect(one(MAP_WASH_TEST_ID)?.getAttribute("data-timeofday")).toBe("night");
+    expect(Number(one(MAP_WASH_TEST_ID)?.getAttribute("fill-opacity"))).toBeGreaterThan(dayOpacity);
+  });
+
+  it("reads night from the daylight hours it is given, not from a fixed table", async () => {
+    await render(
+      <MapRenderer
+        view={surfaceView(NOW)}
+        selection={null}
+        onSelect={nothingSelected}
+        daylight={{ ...BALANCE.time, nightStartHour: START_HOUR + NOW }}
+      />,
+    );
+
+    expect(one(MAP_WASH_TEST_ID)?.getAttribute("data-timeofday")).toBe("night");
+  });
+
+  it("draws the new layers below the river or above the nodes, never between", async () => {
+    await renderSurface();
+
+    const river = one(MAP_RIVER_TEST_ID);
+    const lastNode = all(MAP_NODE_TEST_ID).at(-1) ?? null;
+    expect(drawnBefore(one(MAP_PLATE_TEST_ID), all(MAP_BLOCK_TEST_ID)[0] ?? null)).toBe(true);
+    expect(drawnBefore(all(MAP_BLOCK_TEST_ID).at(-1) ?? null, one(MAP_WASH_TEST_ID))).toBe(true);
+    expect(drawnBefore(one(MAP_WASH_TEST_ID), river)).toBe(true);
+    expect(drawnBefore(river, one(MAP_OVERLAY_TEST_ID))).toBe(true);
+    expect(drawnBefore(lastNode, one(MAP_EXIT_GATES_TEST_ID))).toBe(true);
+    expect(one(MAP_WASH_TEST_ID)?.getAttribute("style")).toContain("pointer-events: none");
+  });
+
+  it("sizes the plate to the viewBox, so the ground covers the whole canvas", async () => {
+    await renderSurface();
+
+    const plate = one(MAP_PLATE_TEST_ID);
+    const plateBox = ["x", "y", "width", "height"].map((name) => plate?.getAttribute(name));
+    expect(plateBox.join(" ")).toBe(one(MAP_TEST_ID)?.getAttribute("viewBox"));
+  });
+});
+
+describe("the map actors (PLAN M6.5)", () => {
+  const within = (element: Element | undefined, testId: string): readonly Element[] =>
+    Array.from(element?.querySelectorAll(`[data-testid="${testId}"]`) ?? []);
+
+  const edgeNamed = (edgeId: string): Element | undefined =>
+    withAttribute(MAP_EDGE_TEST_ID, "data-edgeid", edgeId)[0];
+
+  const nodeNamed = (nodeId: string): Element | undefined =>
+    withAttribute(MAP_NODE_TEST_ID, "data-nodeid", nodeId)[0];
+
+  const followedBy = (earlier: Element | null, later: Element | null): boolean =>
+    earlier !== null &&
+    later !== null &&
+    Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("draws every node as a pip carrying its district, and rings only the incident node", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+
+    for (const marker of all(MAP_NODE_TEST_ID)) {
+      const pips = within(marker, MAP_PIP_TEST_ID);
+      expect(pips).toHaveLength(1);
+      expect(pips[0]?.getAttribute("data-district")).toBe(marker.getAttribute("data-district"));
+    }
+    expect(all(MAP_INCIDENT_RING_TEST_ID)).toHaveLength(1);
+    expect(within(nodeNamed(String(DOWNTOWN)), MAP_INCIDENT_RING_TEST_ID)).toHaveLength(1);
+  });
+
+  it("gives every node and edge a focus outline the stylesheet shows only on keyboard focus", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+
+    for (const target of [...all(MAP_NODE_TEST_ID), ...all(MAP_EDGE_TEST_ID)]) {
+      expect(target.getAttribute("tabindex")).toBe("0");
+      expect(target.classList.contains(MAP_CLASSES.target)).toBe(true);
+      const outlines = within(target, MAP_FOCUS_TEST_ID);
+      expect(outlines).toHaveLength(1);
+      expect(outlines[0]?.classList.contains(MAP_CLASSES.focus)).toBe(true);
+    }
+    expect(STYLESHEET).toContain(`.${MAP_CLASSES.focus} {\n  opacity: 0;`);
+    expect(STYLESHEET).toContain(
+      `.${MAP_CLASSES.target}:focus-visible .${MAP_CLASSES.focus} {\n  opacity: 1;`,
+    );
+  });
+
+  it("keeps the one glow line per edge, so the focus and checkpoint strokes are paths", async () => {
+    const view = viewWith({
+      containments: [{ kind: "roadblock", edgeId: ROAD, expiresAt: NOW + 1 }],
+    });
+
+    await render(
+      <MapRenderer
+        view={view}
+        selection={{ kind: "edge", edgeId: ROAD }}
+        onSelect={nothingSelected}
+      />,
+    );
+
+    expect(container?.querySelectorAll("line")).toHaveLength(EDGES.length);
+  });
+
+  it("leaves every target live when nothing is armed", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+
+    expect(withAttribute(MAP_NODE_TEST_ID, "data-selectable", "true")).toHaveLength(NODES.length);
+    expect(withAttribute(MAP_EDGE_TEST_ID, "data-selectable", "true")).toHaveLength(EDGES.length);
+  });
+
+  it("dims what the armed action cannot target and still reports a click on it", async () => {
+    const picked: MapSelection[] = [];
+
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={(selection) => picked.push(selection)}
+        selectableKind={{ kind: "edge", edgeKinds: ["road", "bridge"] }}
+      />,
+    );
+
+    expect(withAttribute(MAP_NODE_TEST_ID, "data-selectable", "false")).toHaveLength(NODES.length);
+    expect(edgeNamed(String(FOOTPATH))?.getAttribute("data-selectable")).toBe("false");
+    expect(edgeNamed(String(ROAD))?.getAttribute("data-selectable")).toBe("true");
+    expect(STYLESHEET).toContain(
+      `.${MAP_CLASSES.target}[data-selectable="false"] {\n  opacity: var(--mh-fade-disabled);`,
+    );
+
+    const footpath = edgeNamed(String(FOOTPATH));
+    const residential = nodeNamed(String(RESIDENTIAL));
+    if (footpath !== undefined) await clickOn(footpath);
+    if (residential !== undefined) await pressOn(residential, "Enter");
+
+    expect(picked).toEqual([
+      { kind: "edge", edgeId: FOOTPATH },
+      { kind: "node", nodeId: RESIDENTIAL },
+    ]);
+  });
+
+  it("dims every edge and keeps every node for a node action", async () => {
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={nothingSelected}
+        selectableKind={{ kind: "node" }}
+      />,
+    );
+
+    expect(withAttribute(MAP_NODE_TEST_ID, "data-selectable", "true")).toHaveLength(NODES.length);
+    expect(withAttribute(MAP_EDGE_TEST_ID, "data-selectable", "false")).toHaveLength(EDGES.length);
+  });
+
+  it("locks a reticle onto a selected edge, inside that edge and no other", async () => {
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={{ kind: "edge", edgeId: BRIDGE }}
+        onSelect={nothingSelected}
+      />,
+    );
+
+    expect(all(MAP_SELECTION_TEST_ID)).toHaveLength(1);
+    expect(within(edgeNamed(String(BRIDGE)), MAP_SELECTION_TEST_ID)).toHaveLength(1);
+    expect(all(MAP_SELECTION_TEST_ID)[0]?.classList.contains(MAP_CLASSES.reticle)).toBe(true);
+  });
+
+  it("animates the reticle only for someone who has not asked for reduced motion", () => {
+    const guard = STYLESHEET.lastIndexOf("@media (prefers-reduced-motion: no-preference) {");
+    expect(guard).toBeGreaterThan(0);
+    const beforeGuard = STYLESHEET.slice(0, guard);
+    const insideGuard = STYLESHEET.slice(guard);
+
+    expect(insideGuard).toContain("animation: mh-map-lock-on");
+    expect(insideGuard).toContain("@keyframes mh-map-lock-on");
+    expect(beforeGuard).not.toContain("animation:");
+    expect(beforeGuard).not.toContain("@keyframes");
+  });
+
+  it("stands a checkpoint barrier on a closed edge and nowhere else", async () => {
+    const view = viewWith({
+      containments: [{ kind: "roadblock", edgeId: ROAD, expiresAt: NOW + 1 }],
+    });
+
+    await render(<MapRenderer view={view} selection={null} onSelect={nothingSelected} />);
+
+    expect(all(MAP_CHECKPOINT_TEST_ID)).toHaveLength(1);
+    expect(within(edgeNamed(String(ROAD)), MAP_CHECKPOINT_TEST_ID)).toHaveLength(1);
+    expect(all(MAP_CHECKPOINT_TEST_ID)[0]?.getAttribute("data-edgeid")).toBe(String(ROAD));
+    expect(edgeNamed(String(ROAD))?.querySelector("circle")).toBeNull();
+  });
+
+  it("marks each node a civilian was hurt at, once per node, over the nodes and the gates", async () => {
+    const events: readonly HunterEvent[] = [
+      { kind: "civilian_hurt", turn: 1, nodeId: RESIDENTIAL },
+      { kind: "nightfall", turn: 2 },
+      { kind: "civilian_hurt", turn: 3, nodeId: RESIDENTIAL },
+      { kind: "civilian_hurt", turn: 2, nodeId: makeNodeId("n-missing") },
+    ];
+
+    await render(
+      <MapRenderer view={viewWith({ events })} selection={null} onSelect={nothingSelected} />,
+    );
+
+    const markers = all(MAP_INCIDENT_TEST_ID);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]?.getAttribute("data-nodeid")).toBe(String(RESIDENTIAL));
+    expect(markers[0]?.getAttribute("data-count")).toBe("2");
+    expect(markers[0]?.getAttribute("data-turn")).toBe("3");
+    const layer = one(MAP_INCIDENTS_TEST_ID);
+    expect(layer?.getAttribute("style")).toContain("pointer-events: none");
+    expect(followedBy(one(MAP_EXIT_GATES_TEST_ID), layer)).toBe(true);
+    expect(nodeNamed(String(RESIDENTIAL))?.getAttribute("aria-label")).toContain("civilian hurt");
+    expect(nodeNamed(String(DOWNTOWN))?.getAttribute("aria-label")).not.toContain("civilian hurt");
+  });
+
+  it("draws no incident layer for a hunt nobody has been hurt in", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+
+    expect(one(MAP_INCIDENTS_TEST_ID)).toBeNull();
   });
 });
