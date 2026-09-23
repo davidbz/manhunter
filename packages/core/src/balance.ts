@@ -91,7 +91,7 @@ const EDGES: Readonly<Record<EdgeKind, EdgeProperties>> = {
   bridge: { costByMode: { foot: 2, car: 1, transit: null }, blockable: true },
 };
 
-/** Utility weights for DESIGN.md's decision model. PLAN M7 adds a sibling per new profile. */
+/** Utility weights for DESIGN.md's decision model. PLAN M8 adds a sibling per new profile. */
 export type CriminalProfileWeights = {
   readonly exitProgress: number;
   readonly perceivedRisk: number;
@@ -129,7 +129,7 @@ const PROFILES: CriminalProfiles = { amateur: AMATEUR };
  * choice, which is what keeps a shared replay link from spoiling the hunt it replays.
  *
  * All three pools name `amateur` alone because it is the only profile `PROFILES` gives behaviour
- * to. PLAN M7 is what makes these rows differ. `balance.test.ts` pins the invariant that a pooled
+ * to. PLAN M8 is what makes these rows differ. `balance.test.ts` pins the invariant that a pooled
  * profile always has weights, which is what keeps `ai.ts`'s no-behaviour case out of a real hunt.
  *
  * Annotated rather than inferred, for the same reason `MAP` is: a test and a balance sweep both
@@ -346,7 +346,7 @@ export const BALANCE = {
     pressureMax: 100,
     /**
      * Pressure is display-only in the MVP (DESIGN.md "Hunter resources"): it rises, it is shown,
-     * and nothing reads it until M7's override events. Twenty-four turns of this plus one
+     * and nothing reads it until M8's override events. Twenty-four turns of this plus one
      * casualty brings it near the top without a quiet game ever pinning it there.
      */
     pressurePerTurn: 3,

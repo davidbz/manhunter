@@ -6,7 +6,7 @@
  * clipping against one half-plane at a time. What survives is the node's Voronoi cell inside the
  * rectangle. Derived here rather than in `core` because `core` keeps the generating grid off
  * `MapGraph` on purpose, and positions are the one thing every generator, today's jittered grid
- * and M7's Voronoi alike, is guaranteed to produce.
+ * and M8's Voronoi alike, is guaranteed to produce.
  *
  * Pure data in, pure data out; no rendering. The cell carries its node's `districtType` so the
  * renderer can merge neighbouring cells of one type into a district blob.

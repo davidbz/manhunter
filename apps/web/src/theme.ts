@@ -422,7 +422,7 @@ const DISTRICT_GLYPHS: Readonly<Record<DistrictType, string>> = {
   industrial: "M1.5 14.5 V8.5 L5 6 V8.5 L8.5 6 V8.5 L12 6 V14.5 H1.5 M12 9 V2 H14.5 V14.5 H12",
   park: "M8 1.5 L3 9.5 H13 Z M8 9.5 V14.5 M5 14.5 H11",
   transit_hub: "M4 2.5 H12 V11 H4 Z M4 7.5 H12 M6 11 L4 14.5 M10 11 L12 14.5",
-  exit: "M9 2.5 H13.5 V13.5 H9 M2.5 8 H10.5 M7.5 5 L10.5 8 L7.5 11",
+  exit: "M9 2.5 H13.5 V13.5 H9 M2.5 8 H10.5 M8.5 5 L10.5 8 L7.5 11",
 };
 
 /** An exclamation mark on the harm badge, on a 16-unit square. */
@@ -650,7 +650,7 @@ export const ACTION_ICON_THEME: ActionIconTheme = {
       "M1.5 4.5 H14.5 V9 H1.5 Z M5 4.5 L2.5 9 M9 4.5 L6.5 9 M13 4.5 L10.5 9 M3.5 9 V14.5 M12.5 9 V14.5",
     canvass: "M1.5 2.5 H14.5 V10.5 H7 L3.5 13.5 V10.5 H1.5 Z M4.5 5.5 H11.5 M4.5 7.5 H9.5",
     pull_cctv:
-      "M1.5 5 L10.5 2.5 L12 7.5 L3 10 Z M12 4.5 L14.5 4 M7.5 9 L8.5 12.5 H14.5 M14.5 10.5 V14.5",
+      "M1.5 5 L10.5 2.5 L12 7.5 L3 10 Z M12 4.5 L14.5 4 M8.5 9 L8.5 12.5 H14.5 M14.5 10.5 V14.5",
     true_briefing:
       "M6 1.5 H10 V8.5 H6 Z M4 6.5 V8.5 Q4 11.5 8 11.5 Q12 11.5 12 8.5 V6.5 M8 11.5 V14.5 M5 14.5 H11",
   },

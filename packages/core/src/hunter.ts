@@ -17,7 +17,7 @@ export type Roadblock = {
   readonly expiresAt: Turn;
 };
 
-/** Standing measures on the map. One variant in the MVP; the rest are PLAN M7. */
+/** Standing measures on the map. One variant in the MVP; the rest are PLAN M8. */
 export type Containment = Roadblock;
 
 export type HunterState = {
@@ -35,7 +35,7 @@ export type HunterState = {
    *
    * The criminal's own record of the same broadcasts is `CriminalKnowledge.heardBriefingTurns`.
    * Two lists rather than one because they are two facts: what the hunter said, and what the
-   * criminal picked up. A fake briefing (PLAN M7) is the first without being the second.
+   * criminal picked up. A fake briefing (PLAN M8) is the first without being the second.
    */
   readonly briefingTurns: readonly Turn[];
 };

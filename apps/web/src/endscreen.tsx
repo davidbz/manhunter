@@ -12,7 +12,7 @@
  * **Every component the breakdown carries is rendered by iterating `breakdown.components`, not
  * by naming each `ScoreComponentKind` in a branch.** `SCORE_COMPONENT_LABELS` is a
  * `Readonly<Record<ScoreComponentKind, string>>`, the `METER_LABELS` pattern `meters.tsx` set: a
- * fifth component added to `core/src/score.ts`'s `SCORE_COMPONENTS` table (PLAN M7's
+ * fifth component added to `core/src/score.ts`'s `SCORE_COMPONENTS` table (PLAN M8's
  * captured-alive bonus) is a compile error here until this table says what it is called, so a
  * new component cannot silently go unrendered. `OUTCOME_LABELS` is the same table over
  * `FinishedOutcome["kind"]`.
