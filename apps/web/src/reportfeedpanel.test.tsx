@@ -4,7 +4,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGameStore, type GameStore } from "./gamestore";
-import { REPORT_ENTRY_TEST_ID, REPORT_FEED_EMPTY_TEST_ID, REPORT_FEED_TEST_ID } from "./reportfeed";
+import {
+  REPORT_ENTRY_TEST_ID,
+  REPORT_FEED_EMPTY_TEST_ID,
+  REPORT_FEED_TEST_ID,
+  REPORT_RELIABILITY_TEST_ID,
+} from "./reportfeed";
 import { ReportFeedPanel } from "./reportfeedpanel";
 import { GameStoreProvider } from "./storecontext";
 import { TEST_GAME_DEPS } from "./wiring.testfixture";
@@ -83,5 +88,33 @@ describe("the connected report feed", () => {
     const delivered = store.getState().hunt?.view.reports.length ?? 0;
     expect(delivered).toBeGreaterThan(0);
     expect(count(REPORT_ENTRY_TEST_ID)).toBe(delivered);
+  });
+});
+
+describe("the connected report feed's reliability badges (PLAN M6.8)", () => {
+  it("weighs sources by the store's balance, not a default of its own", async () => {
+    const weight = 0.33;
+    const balance = {
+      ...BALANCE,
+      belief: {
+        ...BALANCE.belief,
+        sourceWeight: { cctv: weight, patrol: weight, witness: weight, tip: weight },
+      },
+    };
+    const store = createGameStore(TEST_GAME_DEPS, balance);
+    await render(store);
+
+    await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));
+    for (let played = 0; played < TURNS_PLAYED; played += 1) {
+      await act(async () => store.getState().endTurn([{ kind: "true_briefing" }]));
+    }
+
+    const badges = Array.from(
+      container?.querySelectorAll(`[data-testid="${REPORT_RELIABILITY_TEST_ID}"]`) ?? [],
+    );
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges.every((badge) => badge.getAttribute("data-weight") === String(weight))).toBe(
+      true,
+    );
   });
 });

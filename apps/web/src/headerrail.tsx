@@ -88,7 +88,10 @@ export const HeaderRail = ({ items }: HeaderRailProps) => (
         data-rail={item.kind}
       >
         <dt className="mh-rail__label">{item.label}</dt>
-        <dd className="mh-rail__value">{item.display}</dd>
+        {/* Keyed by what it reads, so a new reading remounts and replays the turn-advance motion. */}
+        <dd key={item.display} className="mh-rail__value">
+          {item.display}
+        </dd>
       </div>
     ))}
   </dl>

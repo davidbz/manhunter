@@ -46,7 +46,7 @@ export type DistrictCellResult =
 const MIDPOINT_FRACTION = 0.5;
 
 /** A line through `origin`; points on the `normal` side are outside. */
-type HalfPlane = {
+export type HalfPlane = {
   readonly origin: Position;
   readonly normal: Position;
 };
@@ -104,7 +104,11 @@ const edgeContribution = (from: Position, to: Position, plane: HalfPlane): reado
   return toInside ? [crossing, to] : [crossing];
 };
 
-const clipToHalfPlane = (polygon: CellPolygon, plane: HalfPlane): CellPolygon =>
+/**
+ * The part of a convex polygon on the inside of `plane`. Exported for `districtblocks.ts`, which
+ * insets a cell by clipping it against its own edges moved inward.
+ */
+export const clipToHalfPlane = (polygon: CellPolygon, plane: HalfPlane): CellPolygon =>
   polygon.flatMap((to, index) => {
     const from = polygon[(index === 0 ? polygon.length : index) - 1] ?? to;
 

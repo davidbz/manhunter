@@ -332,6 +332,53 @@ describe("loading a shared replay", () => {
   });
 });
 
+/** PLAN M6.9: restart is the way back to the briefing, and `start` is still the way out of it. */
+describe("restarting", () => {
+  it("drops a settled hunt and returns the store to its pre-start state", () => {
+    const store = playedOut(startedStore());
+
+    store.getState().restart();
+
+    expect(store.getState().hunt).toBeNull();
+    expect(store.getState().refusal).toBeNull();
+    expect(store.getState().rejections).toEqual([]);
+    expect(store.getState().shareLinkRefusal).toBeNull();
+  });
+
+  it("clears a standing refusal", () => {
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+    store.getState().endTurn([]);
+    expect(store.getState().refusal).toEqual({ kind: "no_hunt" });
+
+    store.getState().restart();
+
+    expect(store.getState().refusal).toBeNull();
+  });
+
+  it("clears the share link's load refusal", () => {
+    const store = createGameStore({ game, turn, scoring, playback }, BALANCE);
+    store.getState().loadShared("not a replay");
+    expect(store.getState().shareLinkRefusal).not.toBeNull();
+
+    store.getState().restart();
+
+    expect(store.getState().shareLinkRefusal).toBeNull();
+  });
+
+  it("leaves the balance alone and lets the next start begin a fresh hunt", () => {
+    const store = playedOut(startedStore());
+    const { balance } = store.getState();
+
+    store.getState().restart();
+    store.getState().start({ setup: SETUP, seed: SEED });
+
+    expect(store.getState().balance).toBe(balance);
+    expect(huntIn(store).view.clock.turn).toBe(0);
+    expect(huntIn(store).recordedActions).toEqual([]);
+    expect(huntIn(store).frames).toBeNull();
+  });
+});
+
 /**
  * The bound on the action log (AGENTS.md section 5). A hunt with no outcome has no deadline rule
  * to stop it, so the log is the thing that grows; the shipped turn logic cannot reach the cap

@@ -5,7 +5,11 @@ import {
   REPLAY_SCRUBBER_INPUT_TEST_ID,
   REPLAY_SCRUBBER_TEST_ID,
   REPLAY_SCRUBBER_TURN_TEST_ID,
+  REPLAY_TRANSPORT_TEST_ID,
   ReplayScrubber,
+  TRANSPORT_STEPS,
+  type TransportStep,
+  transportTargetOf,
 } from "./replayscrubber";
 
 /**
@@ -45,6 +49,14 @@ const renderControlled = async (initial: number): Promise<void> => {
   await act(async () => {
     mounted.render(<Controlled />);
   });
+};
+
+const transport = (step: TransportStep): HTMLButtonElement => {
+  const button = container?.querySelector(
+    `[data-testid="${REPLAY_TRANSPORT_TEST_ID}"][data-step="${step}"]`,
+  );
+  if (!(button instanceof HTMLButtonElement)) throw new Error(`expected a ${step} button`);
+  return button;
 };
 
 const input = (): HTMLInputElement | null =>
@@ -112,5 +124,63 @@ describe("the scrubber control", () => {
 
     expect(turnIndicator()).toContain("4");
     expect(input()?.value).toBe("4");
+  });
+});
+
+/** PLAN M6.9: the transport row, one button per step, clamped to the replay's range. */
+describe("the transport buttons", () => {
+  it("names a clamped target turn for every step", () => {
+    expect(transportTargetOf("first", 2, MAX_TURN)).toBe(0);
+    expect(transportTargetOf("previous", 2, MAX_TURN)).toBe(1);
+    expect(transportTargetOf("previous", 0, MAX_TURN)).toBe(0);
+    expect(transportTargetOf("next", 2, MAX_TURN)).toBe(3);
+    expect(transportTargetOf("next", MAX_TURN, MAX_TURN)).toBe(MAX_TURN);
+    expect(transportTargetOf("last", 2, MAX_TURN)).toBe(MAX_TURN);
+  });
+
+  it("draws one labelled button per step", async () => {
+    await render(2, () => {});
+
+    for (const step of TRANSPORT_STEPS) {
+      expect(transport(step).getAttribute("aria-label")).not.toBeNull();
+      expect(transport(step).disabled).toBe(false);
+    }
+  });
+
+  it("disables the steps that would not move off the first turn", async () => {
+    await render(0, () => {});
+
+    expect(transport("first").disabled).toBe(true);
+    expect(transport("previous").disabled).toBe(true);
+    expect(transport("next").disabled).toBe(false);
+    expect(transport("last").disabled).toBe(false);
+  });
+
+  it("disables the steps that would not move off the last turn", async () => {
+    await render(MAX_TURN, () => {});
+
+    expect(transport("next").disabled).toBe(true);
+    expect(transport("last").disabled).toBe(true);
+  });
+
+  it("reports the step's target turn when clicked", async () => {
+    const scrubbed: number[] = [];
+    await render(2, (turn) => scrubbed.push(turn));
+
+    for (const step of TRANSPORT_STEPS) {
+      await act(async () => transport(step).click());
+    }
+
+    expect(scrubbed).toEqual([0, 1, 3, MAX_TURN]);
+  });
+
+  it("moves the controlled turn one step at a time", async () => {
+    await renderControlled(0);
+
+    await act(async () => transport("next").click());
+    await act(async () => transport("next").click());
+
+    expect(turnIndicator()).toContain("2");
+    expect(input()?.value).toBe("2");
   });
 });

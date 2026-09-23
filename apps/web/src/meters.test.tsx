@@ -19,7 +19,9 @@ import {
   type MeterBounds,
   Meters,
   metersOf,
+  segmentsOf,
 } from "./meters";
+import { METER_THEME } from "./theme";
 
 /**
  * The meters under jsdom, per the plan's "How much of M5 is Playwright's". Bounds come from
@@ -167,5 +169,52 @@ describe("the meters", () => {
 
     expect(clock?.min).toBe(clock?.max);
     expect(clock?.display).toBe("22:00 - turn 0 of 0, 0 left");
+  });
+});
+
+describe("the meter segments (PLAN M6.8)", () => {
+  it("cuts a unit meter into one segment per unit, so what is left can be counted", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} />);
+
+    expect(meterOf("action_points")?.getAttribute("data-segments")).toBe(
+      String(BOUNDS.actionPointsPerTurn),
+    );
+    expect(meterOf("clock")?.getAttribute("data-segments")).toBe(String(NOW + TURNS_REMAINING));
+  });
+
+  it("publishes a unit meter's count to the stylesheet on its own element", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} />);
+
+    const bar = meterOf("action_points")?.querySelector("meter") as HTMLElement | null;
+    expect(bar?.style.getPropertyValue("--mh-meter-segments")).toBe(
+      String(BOUNDS.actionPointsPerTurn),
+    );
+  });
+
+  it("leaves a scaled meter to the stylesheet's default count", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} />);
+
+    for (const kind of ["budget", "trust", "pressure"]) {
+      expect(meterOf(kind)?.hasAttribute("data-segments")).toBe(false);
+      const bar = meterOf(kind)?.querySelector("meter") as HTMLElement | null;
+      expect(bar?.style.getPropertyValue("--mh-meter-segments")).toBe("");
+    }
+  });
+
+  it("falls back to the default when a unit range is too wide to count", () => {
+    const wide = { kind: "clock", label: "Clock", value: 0, min: 0, display: "" } as const;
+
+    expect(segmentsOf({ ...wide, max: METER_THEME.maxUnitSegments }, METER_THEME)).toBe(
+      METER_THEME.maxUnitSegments,
+    );
+    expect(segmentsOf({ ...wide, max: METER_THEME.maxUnitSegments + 1 }, METER_THEME)).toBeNull();
+  });
+
+  it("draws no segments for a range with no span", () => {
+    const clock = metersOf(viewWith({ turn: 0, turnsRemaining: 0 }), BOUNDS).find(
+      (meter) => meter.kind === "clock",
+    );
+
+    expect(clock?.segments).toBeNull();
   });
 });

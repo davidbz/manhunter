@@ -14,6 +14,11 @@
  * An action the hunter cannot afford is offered disabled rather than hidden: DESIGN.md "End
  * conditions" rejects an unaffordable action at planning time, and a player who cannot see the
  * price of the thing they cannot buy cannot plan around it.
+ *
+ * **Tiles (PLAN M6.8).** Each option is a tile with a stencil icon and one cost chip per resource;
+ * a chip the hunter cannot cover is marked `data-short`, so an unaffordable tile says *which*
+ * meter is the problem, and the tile adds a visible "cannot afford" line rather than relying on
+ * the dimming alone.
  */
 
 import {
@@ -26,6 +31,7 @@ import {
   targetKindOf,
 } from "@manhunter/core";
 import type { ActionTarget } from "./actiondraft";
+import { ActionIcon } from "./actionicon";
 
 /** The part of `HunterState` an action is billed against, named the way `MeterBounds` is. */
 export type ActionResources = {
@@ -63,6 +69,11 @@ export const ACTION_TARGET_PROMPTS: Readonly<Record<ActionTargetKind, string>> =
   global: "No target needed",
 };
 
+/** The two resources an action is billed in, one chip each on its tile. */
+export const COST_CHIP_KINDS = ["action_points", "budget"] as const;
+
+export type CostChipKind = (typeof COST_CHIP_KINDS)[number];
+
 /** One action, priced and judged against what the hunter is holding. */
 export type ActionOption = {
   readonly kind: HunterActionKind;
@@ -70,6 +81,13 @@ export type ActionOption = {
   readonly targetKind: ActionTargetKind;
   readonly cost: ActionCost;
   readonly affordable: boolean;
+  /** Which of the two resources falls short of the price; both `false` exactly when affordable. */
+  readonly short: Readonly<Record<CostChipKind, boolean>>;
+};
+
+export type CostChip = {
+  readonly kind: CostChipKind;
+  readonly text: string;
 };
 
 export type ActionPanelProps = {
@@ -88,8 +106,12 @@ export const ACTION_PANEL_TEST_ID = "action-panel";
 export const ACTION_OPTION_TEST_ID = "action-option";
 export const ACTION_COST_TEST_ID = "action-cost";
 export const ACTION_DRAFT_TEST_ID = "action-draft";
+export const ACTION_COST_CHIP_TEST_ID = "action-cost-chip";
+export const ACTION_UNAFFORDABLE_TEST_ID = "action-unaffordable";
 
 const ACTIONS_LABEL = "Actions";
+const ACTIONS_TITLE = "Action board";
+const UNAFFORDABLE_TEXT = "Cannot afford";
 const COST_SEPARATOR = ", ";
 const ACTION_POINT_SUFFIX = " AP";
 const BUDGET_SUFFIX = " budget";
@@ -99,8 +121,15 @@ const READY_SEPARATOR = " - ";
 /** Exported because PLAN M5.5b's queue names the same target, and the city has one name here. */
 export const GLOBAL_TARGET_LABEL = "the whole city";
 
+export const costChipsOf = (cost: ActionCost): readonly CostChip[] => [
+  { kind: "action_points", text: `${cost.actionPoints}${ACTION_POINT_SUFFIX}` },
+  { kind: "budget", text: `${cost.budget}${BUDGET_SUFFIX}` },
+];
+
 export const costLabel = (cost: ActionCost): string =>
-  `${cost.actionPoints}${ACTION_POINT_SUFFIX}${COST_SEPARATOR}${cost.budget}${BUDGET_SUFFIX}`;
+  costChipsOf(cost)
+    .map((chip) => chip.text)
+    .join(COST_SEPARATOR);
 
 /**
  * Every action, priced from `core`. The affordability test is the same pair of comparisons
@@ -113,13 +142,18 @@ export const actionOptionsOf = (
 ): readonly ActionOption[] =>
   ACTION_KINDS.map((kind) => {
     const cost = actionCostOf(kind, balance);
+    const short = {
+      action_points: cost.actionPoints > resources.actionPoints,
+      budget: cost.budget > resources.budget,
+    };
 
     return {
       kind,
       label: ACTION_PRESENTATION[kind].label,
       targetKind: targetKindOf(kind),
       cost,
-      affordable: cost.actionPoints <= resources.actionPoints && cost.budget <= resources.budget,
+      affordable: !short.action_points && !short.budget,
+      short,
     };
   });
 
@@ -140,6 +174,28 @@ export const draftMessage = (props: ActionPanelProps): string => {
   return `${READY_PREFIX}${option.label}${READY_SEPARATOR}${targetLabel(props.target)}`;
 };
 
+/**
+ * The chips' text is `costLabel`'s, piece by piece, so the cost's `textContent` still reads
+ * exactly as it did before the chips; the separator is only hidden from sight.
+ */
+const CostChips = ({ option }: { readonly option: ActionOption }) => (
+  <span className="mh-tile__cost" data-testid={ACTION_COST_TEST_ID}>
+    {costChipsOf(option.cost).map((chip, position) => (
+      <span key={chip.kind} className="mh-tile__chip-slot">
+        {position === 0 ? null : <span className="mh-visually-hidden">{COST_SEPARATOR}</span>}
+        <span
+          className="mh-chip"
+          data-testid={ACTION_COST_CHIP_TEST_ID}
+          data-chip={chip.kind}
+          data-short={option.short[chip.kind]}
+        >
+          {chip.text}
+        </span>
+      </span>
+    ))}
+  </span>
+);
+
 const ActionOptionButton = ({
   option,
   armed,
@@ -149,9 +205,10 @@ const ActionOptionButton = ({
   readonly armed: boolean;
   readonly onArm: (kind: HunterActionKind) => void;
 }) => (
-  <li>
+  <li className="mh-board__slot">
     <button
       type="button"
+      className="mh-tile"
       aria-pressed={armed}
       disabled={!option.affordable}
       data-testid={ACTION_OPTION_TEST_ID}
@@ -161,15 +218,22 @@ const ActionOptionButton = ({
       data-armed={armed}
       onClick={() => onArm(option.kind)}
     >
-      <span>{option.label}</span>
-      <span data-testid={ACTION_COST_TEST_ID}>{costLabel(option.cost)}</span>
+      <ActionIcon kind={option.kind} />
+      <span className="mh-tile__label">{option.label}</span>
+      <CostChips option={option} />
+      {option.affordable ? null : (
+        <span className="mh-tile__status" data-testid={ACTION_UNAFFORDABLE_TEST_ID}>
+          {UNAFFORDABLE_TEXT}
+        </span>
+      )}
     </button>
   </li>
 );
 
 export const ActionPanel = (props: ActionPanelProps) => (
-  <section aria-label={ACTIONS_LABEL} data-testid={ACTION_PANEL_TEST_ID}>
-    <ul>
+  <section aria-label={ACTIONS_LABEL} className="mh-card" data-testid={ACTION_PANEL_TEST_ID}>
+    <h2 className="mh-card__title">{ACTIONS_TITLE}</h2>
+    <ul className="mh-board">
       {props.options.map((option) => (
         <ActionOptionButton
           key={option.kind}
@@ -179,7 +243,11 @@ export const ActionPanel = (props: ActionPanelProps) => (
         />
       ))}
     </ul>
-    <p data-testid={ACTION_DRAFT_TEST_ID} data-ready={props.draft !== null}>
+    <p
+      className="mh-board__draft"
+      data-testid={ACTION_DRAFT_TEST_ID}
+      data-ready={props.draft !== null}
+    >
       {draftMessage(props)}
     </p>
   </section>

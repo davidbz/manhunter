@@ -1,5 +1,5 @@
 /**
- * The game the UI is holding, and the two dispatches that move it (PLAN M5.2).
+ * The game the UI is holding, and the dispatches that move it (PLAN M5.2, M6.9's `restart`).
  *
  * The store is a data holder, not logic. It keeps the `SealedWorld` - opaque data it can hand
  * back to `core` and never read (architecture rule 4) - the `HunterView` projected from it, and
@@ -127,6 +127,12 @@ export type GameStoreState = {
   readonly start: (request: StartRequest) => void;
   readonly endTurn: (actions: readonly HunterAction[]) => void;
   readonly loadShared: (value: string) => void;
+  /**
+   * Back to the briefing (PLAN M6.9): no hunt, and nothing left over from the last one or from the
+   * URL. Never refused. The next hunt is then begun by `start`, which already replaces whatever
+   * hunt the store held, so restart adds only the way back to the form, not a second way to start.
+   */
+  readonly restart: () => void;
 };
 
 export type GameStore = StoreApi<GameStoreState>;
@@ -267,6 +273,13 @@ const shared = (deps: GameStoreDeps, state: GameStoreState, value: string): Tran
   };
 };
 
+const RESTARTED: Transition = {
+  hunt: null,
+  refusal: null,
+  rejections: NO_REJECTIONS,
+  shareLinkRefusal: NO_SHARE_LINK_REFUSAL,
+};
+
 export const createGameStore = (deps: GameStoreDeps, balance: Balance): GameStore =>
   createStore<GameStoreState>()((set, get) => ({
     balance,
@@ -277,4 +290,5 @@ export const createGameStore = (deps: GameStoreDeps, balance: Balance): GameStor
     start: (request) => set(started(deps, get(), request)),
     endTurn: (actions) => set(ended(deps, get(), actions)),
     loadShared: (value) => set(shared(deps, get(), value)),
+    restart: () => set(RESTARTED),
   }));

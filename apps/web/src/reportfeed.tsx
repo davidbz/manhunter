@@ -13,16 +13,27 @@
  * read only `receivedAtTurn`, `observedAtTurn`, `source` and `content` - the four fields the
  * player is meant to reason from. Telling a prank from a sighting stays the player's job.
  *
- * DESIGN.md's "monospace report feed": `theme.ts`'s `TYPE_SCALE.family` is applied to `body` by
- * `index.css` (PLAN M6.1), so the feed inherits it like everything else; it is restated here so
- * the feed is still monospace if it is ever rendered
- * somewhere that font is not already the default, and the timestamps use the smaller size in the
- * same table to read as a log rather than as body text.
+ * DESIGN.md's "monospace report feed": `index.css`'s `.mh-feed` sets the monospace stack on the
+ * feed itself, so it stays a log wherever it is rendered, and the timestamps take the small size
+ * so the observed/received pair reads as a log line's stamp rather than as body text.
+ *
+ * **Row chrome (PLAN M6.8)** is `feedrow.ts`'s: a source face seeded from the report id, a
+ * staleness treatment from the report's age, and a reliability badge from the source's weight in
+ * `balance.belief.sourceWeight`. All three read only what the player is already shown.
  */
 
-import type { HunterReport, NodeId, ReportContent, ReportSource, Turn } from "@manhunter/core";
+import {
+  BALANCE,
+  type HunterReport,
+  type NodeId,
+  type ReportContent,
+  type ReportSource,
+  type Turn,
+} from "@manhunter/core";
+import { AvatarPortrait } from "./avatarportrait";
+import { type FeedRow, type FeedRowTheme, feedRowOf, type SourceWeights } from "./feedrow";
 import { LIMITS } from "./limits";
-import { TYPE_SCALE } from "./theme";
+import { AVATAR_THEME, FEED_ROW_THEME } from "./theme";
 
 export type ReportFeedProps = {
   readonly reports: readonly HunterReport[];
@@ -33,6 +44,12 @@ export type ReportFeedProps = {
    * ask for fewer, never for more than it passes in.
    */
   readonly maxEntries?: number;
+  /**
+   * `balance.belief.sourceWeight`, which the reliability badge reads. Defaults to the shipped
+   * balance, the way `MapRenderer`'s `daylight` does; `ReportFeedPanel` passes the store's.
+   */
+  readonly sourceWeights?: SourceWeights;
+  readonly theme?: FeedRowTheme;
 };
 
 export const REPORT_FEED_TEST_ID = "report-feed";
@@ -42,6 +59,8 @@ export const REPORT_ENTRY_TEST_ID = "report-entry";
 export const REPORT_OBSERVED_TEST_ID = "report-observed";
 export const REPORT_RECEIVED_TEST_ID = "report-received";
 export const REPORT_CONTENT_TEST_ID = "report-content";
+export const REPORT_RELIABILITY_TEST_ID = "report-reliability";
+export const REPORT_AGE_TEST_ID = "report-age";
 
 /**
  * Every user-facing word the feed says, in one table. `core` has no strings (see `report.ts`), so
@@ -61,6 +80,14 @@ export const REPORT_CONTENT_LABELS: Readonly<Record<ReportContent["kind"], strin
 };
 
 const FEED_LABEL = "Report feed";
+const FEED_TITLE = "Intel feed";
+const RELIABILITY_PREFIX = "Rel ";
+const PERCENT_SUFFIX = "%";
+const PERCENT = 100;
+const RELIABILITY_LABEL_PREFIX = "Source reliability ";
+const LIVE_AGE_LABEL = "Live";
+const AGE_SUFFIX = "h old";
+const AVATAR_LABEL_SUFFIX = " source";
 const EMPTY_TEXT = "No reports yet";
 const OBSERVED_PREFIX = "Observed turn ";
 const RECEIVED_PREFIX = "Received turn ";
@@ -136,31 +163,71 @@ const contentTextOf = (line: ContentLine): string => {
   return `${placed}${MODE_OPEN}${line.travelMode}${MODE_CLOSE}`;
 };
 
+const percentOf = (weight: number): number => Math.round(weight * PERCENT);
+
+export const reliabilityText = (weight: number): string =>
+  `${RELIABILITY_PREFIX}${percentOf(weight)}${PERCENT_SUFFIX}`;
+
+export const ageText = (age: number): string =>
+  age === NONE ? LIVE_AGE_LABEL : `${age}${AGE_SUFFIX}`;
+
+const ReliabilityBadge = ({ row }: { readonly row: FeedRow }) => (
+  <abbr
+    className="mh-badge"
+    title={`${RELIABILITY_LABEL_PREFIX}${percentOf(row.weight)}${PERCENT_SUFFIX}`}
+    data-testid={REPORT_RELIABILITY_TEST_ID}
+    data-reliability={row.reliability}
+    data-weight={row.weight}
+  >
+    {reliabilityText(row.weight)}
+  </abbr>
+);
+
 const ReportEntry = ({
   report,
+  row,
   isNew,
 }: {
   readonly report: HunterReport;
+  readonly row: FeedRow;
   readonly isNew: boolean;
 }) => (
   <li
+    className="mh-feed__row"
     data-testid={REPORT_ENTRY_TEST_ID}
     data-reportid={report.id}
     data-source={report.source}
     data-observed={report.observedAtTurn}
     data-received={report.receivedAtTurn}
     data-new={isNew}
+    data-age={row.age}
+    data-staleness={row.staleness}
   >
-    <span
-      data-testid={REPORT_OBSERVED_TEST_ID}
-      style={{ fontSize: TYPE_SCALE.sizeSmall }}
-    >{`${OBSERVED_PREFIX}${report.observedAtTurn}`}</span>
-    <span
-      data-testid={REPORT_RECEIVED_TEST_ID}
-      style={{ fontSize: TYPE_SCALE.sizeSmall }}
-    >{`${RECEIVED_PREFIX}${report.receivedAtTurn}`}</span>
-    <span>{REPORT_SOURCE_LABELS[report.source]}</span>
-    <span data-testid={REPORT_CONTENT_TEST_ID}>{contentTextOf(contentLineOf(report.content))}</span>
+    <AvatarPortrait
+      avatar={row.avatar}
+      label={`${REPORT_SOURCE_LABELS[report.source]}${AVATAR_LABEL_SUFFIX}`}
+      size={AVATAR_THEME.thumbnailSize}
+    />
+    <div className="mh-feed__body">
+      <div className="mh-feed__head">
+        <span className="mh-feed__source">{REPORT_SOURCE_LABELS[report.source]}</span>
+        <ReliabilityBadge row={row} />
+        <span className="mh-feed__age" data-testid={REPORT_AGE_TEST_ID}>
+          {ageText(row.age)}
+        </span>
+      </div>
+      <span className="mh-feed__content" data-testid={REPORT_CONTENT_TEST_ID}>
+        {contentTextOf(contentLineOf(report.content))}
+      </span>
+      <div className="mh-feed__times">
+        <span data-testid={REPORT_OBSERVED_TEST_ID}>
+          {`${OBSERVED_PREFIX}${report.observedAtTurn}`}
+        </span>
+        <span data-testid={REPORT_RECEIVED_TEST_ID}>
+          {`${RECEIVED_PREFIX}${report.receivedAtTurn}`}
+        </span>
+      </div>
+    </div>
   </li>
 );
 
@@ -168,30 +235,36 @@ export const ReportFeed = ({
   reports,
   currentTurn,
   maxEntries = LIMITS.maxReportsInFeed,
+  sourceWeights = BALANCE.belief.sourceWeight,
+  theme = FEED_ROW_THEME,
 }: ReportFeedProps) => {
   const page = reportPageOf(reports, maxEntries);
 
   return (
-    <section
-      aria-label={FEED_LABEL}
-      data-testid={REPORT_FEED_TEST_ID}
-      style={{ fontFamily: TYPE_SCALE.family }}
-    >
+    <section aria-label={FEED_LABEL} className="mh-card mh-feed" data-testid={REPORT_FEED_TEST_ID}>
+      <h2 className="mh-card__title">{FEED_TITLE}</h2>
       {page.entries.length === NONE ? (
-        <p data-testid={REPORT_FEED_EMPTY_TEST_ID}>{EMPTY_TEXT}</p>
+        <p className="mh-card__empty" data-testid={REPORT_FEED_EMPTY_TEST_ID}>
+          {EMPTY_TEXT}
+        </p>
       ) : (
-        <ol>
+        <ol className="mh-feed__list">
           {page.entries.map((report) => (
             <ReportEntry
               key={report.id}
               report={report}
+              row={feedRowOf(report, currentTurn, sourceWeights, theme)}
               isNew={report.receivedAtTurn === currentTurn}
             />
           ))}
         </ol>
       )}
       {page.withheld > NONE ? (
-        <p data-testid={REPORT_FEED_OVERFLOW_TEST_ID} data-withheld={page.withheld}>
+        <p
+          className="mh-feed__overflow"
+          data-testid={REPORT_FEED_OVERFLOW_TEST_ID}
+          data-withheld={page.withheld}
+        >
           {`${page.withheld}${OVERFLOW_SUFFIX}`}
         </p>
       ) : null}

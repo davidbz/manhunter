@@ -9,22 +9,33 @@ import {
   APP_FRAME_MAP_TEST_ID,
   APP_FRAME_RAIL_TEST_ID,
 } from "./appframe";
+import { BELIEF_LEGEND_TEST_ID } from "./belieflegend";
+import { BELIEF_HEAT_TEST_ID } from "./beliefoverlay";
+import { BRIEFING_ITEM_TEST_ID, BRIEFING_SCREEN_TEST_ID } from "./briefingscreen";
+import { ClipboardProvider } from "./clipboardcontext";
+import { DEBRIEF_SCREEN_TEST_ID } from "./debriefscreen";
 import {
   DISPATCH_ERRORS_TEST_ID,
   DISPATCH_REFUSAL_TEST_ID,
   DISPATCH_REJECTION_TEST_ID,
 } from "./dispatcherrors";
 import { DISPATCH_SCREEN_TEST_ID, DispatchScreen } from "./dispatchscreen";
+import { CRIMINAL_DOSSIER_TEST_ID } from "./dossier";
 import { END_SCREEN_OUTCOME_TEST_ID, END_SCREEN_TEST_ID } from "./endscreen";
 import { createGameStore, type GameStore } from "./gamestore";
 import { HEADER_RAIL_TEST_ID } from "./headerrail";
+import { HEATMAP_SUMMARY_TEST_ID, HEATMAP_SUSPECT_TEST_ID } from "./heatmapsummarylist";
 import { LIMITS } from "./limits";
 import { MAP_EDGE_TEST_ID, MAP_NODE_TEST_ID, MAP_TEST_ID } from "./maprenderer";
 import { METERS_TEST_ID } from "./meters";
-import { NEW_HUNT_TEST_ID } from "./newhuntform";
+import { NEW_HUNT_SEED_TEST_ID, NEW_HUNT_TEST_ID } from "./newhuntform";
 import { REPLAY_SCREEN_TEST_ID } from "./replayscreen";
+import { REPLAY_SCRUBBER_TEST_ID } from "./replayscrubber";
 import { REPORT_FEED_TEST_ID } from "./reportfeed";
+import { RESTART_TEST_ID } from "./restartbutton";
 import { SHARE_LINK_LOAD_ERROR_TEST_ID, SHARE_LINK_TEST_ID } from "./sharelink";
+import { SHARE_LINK_COPY_TEST_ID } from "./sharelinkcopy";
+import { SKIP_LINK_TEST_ID } from "./skiplink";
 import { GameStoreProvider } from "./storecontext";
 import {
   END_TURN_TEST_ID,
@@ -33,7 +44,7 @@ import {
   QUEUE_REMOVE_TEST_ID,
   QUEUE_ROW_TEST_ID,
 } from "./turnqueue";
-import { TEST_GAME_DEPS } from "./wiring.testfixture";
+import { TEST_CLIPBOARD, TEST_GAME_DEPS } from "./wiring.testfixture";
 
 /**
  * PLAN M5.5a's acceptance criterion, under jsdom: selecting an action narrows the map to the
@@ -63,7 +74,9 @@ const render = async (store: GameStore): Promise<void> => {
   await act(async () => {
     mounted.render(
       <GameStoreProvider store={store}>
-        <DispatchScreen />
+        <ClipboardProvider clipboard={TEST_CLIPBOARD}>
+          <DispatchScreen />
+        </ClipboardProvider>
       </GameStoreProvider>,
     );
   });
@@ -102,6 +115,14 @@ const arm = async (kind: HunterActionKind): Promise<void> => {
   await clickOn(option as Element);
 };
 
+const restartOn = async (screen: "debrief" | "briefing"): Promise<void> => {
+  const button = container?.querySelector(
+    `[data-testid="${RESTART_TEST_ID}"][data-screen="${screen}"]`,
+  );
+  if (!button) throw new Error(`expected a restart button on the ${screen}`);
+  await clickOn(button);
+};
+
 const draftReady = (): string | null =>
   find(ACTION_DRAFT_TEST_ID)?.getAttribute("data-ready") ?? null;
 
@@ -120,6 +141,15 @@ describe("the dispatch screen before a hunt", () => {
     expect(find(NEW_HUNT_TEST_ID)).not.toBeNull();
     expect(find(DISPATCH_SCREEN_TEST_ID)).toBeNull();
     expect(find(ACTION_PANEL_TEST_ID)).toBeNull();
+  });
+
+  it("is the case briefing: the rules, the redacted suspect and the form (PLAN M6.9)", async () => {
+    await render(createGameStore(TEST_GAME_DEPS, BALANCE));
+
+    const briefing = find(BRIEFING_SCREEN_TEST_ID);
+    expect(briefing?.querySelector(`[data-testid="${NEW_HUNT_TEST_ID}"]`)).not.toBeNull();
+    expect(all(BRIEFING_ITEM_TEST_ID).length).toBeGreaterThan(0);
+    expect(find(CRIMINAL_DOSSIER_TEST_ID)?.getAttribute("data-subject")).toBe("redacted");
   });
 
   it("becomes the dispatch screen once a hunt has started", async () => {
@@ -151,6 +181,18 @@ describe("the dispatch screen", () => {
     expect(inRegion(APP_FRAME_INTEL_TEST_ID, REPORT_FEED_TEST_ID)).toBe(true);
     expect(inRegion(APP_FRAME_COMMAND_TEST_ID, ACTION_PANEL_TEST_ID)).toBe(true);
     expect(inRegion(APP_FRAME_COMMAND_TEST_ID, END_TURN_TEST_ID)).toBe(true);
+  });
+
+  it("keys the map with its legend, under the map in the map region (PLAN M6.6)", async () => {
+    await started();
+
+    const map = find(MAP_TEST_ID);
+    const legend = find(BELIEF_LEGEND_TEST_ID);
+
+    expect(find(APP_FRAME_MAP_TEST_ID)?.contains(legend)).toBe(true);
+    expect(legend === null ? 0 : map?.compareDocumentPosition(legend)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("puts the meters above the feed in the intel column", async () => {
@@ -250,6 +292,29 @@ describe("narrowing the map to the armed action's targets", () => {
     expect(draftReady()).toBe("true");
     expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
     expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
+  });
+
+  it("dims what the armed action cannot target, and swaps what it dims when re-armed", async () => {
+    const store = await started();
+    const dimmed = (testId: string): readonly Element[] =>
+      all(testId).filter((element) => element.getAttribute("data-selectable") === "false");
+    const unblockableKinds = Object.entries(store.getState().balance.edges)
+      .filter(([, properties]) => !properties.blockable)
+      .map(([kind]) => kind);
+    const unblockable = all(MAP_EDGE_TEST_ID).filter((edge) =>
+      unblockableKinds.includes(edge.getAttribute("data-edgekind") ?? ""),
+    );
+    expect(unblockable.length).toBeGreaterThan(0);
+
+    await arm("roadblock");
+
+    expect(dimmed(MAP_NODE_TEST_ID)).toHaveLength(all(MAP_NODE_TEST_ID).length);
+    expect(dimmed(MAP_EDGE_TEST_ID)).toEqual(unblockable);
+
+    await arm("canvass");
+
+    expect(dimmed(MAP_NODE_TEST_ID)).toHaveLength(0);
+    expect(dimmed(MAP_EDGE_TEST_ID)).toHaveLength(all(MAP_EDGE_TEST_ID).length);
   });
 
   it("ignores the map entirely while a briefing is armed", async () => {
@@ -487,6 +552,46 @@ describe("once the hunt is over", () => {
 
     expect(find(SHARE_LINK_TEST_ID)).not.toBeNull();
   });
+
+  it("gathers the report, the replay, the dossier and the copyable link in one debrief", async () => {
+    const store = await started();
+    await playOut(store);
+
+    const debrief = find(DEBRIEF_SCREEN_TEST_ID);
+    for (const testId of [
+      END_SCREEN_TEST_ID,
+      REPLAY_SCREEN_TEST_ID,
+      SHARE_LINK_TEST_ID,
+      SHARE_LINK_COPY_TEST_ID,
+    ]) {
+      expect(debrief?.querySelector(`[data-testid="${testId}"]`)).not.toBeNull();
+    }
+    expect(find(CRIMINAL_DOSSIER_TEST_ID)?.getAttribute("data-subject")).toBe("revealed");
+  });
+
+  it("restarts to the briefing and clears the share link (PLAN M6.9)", async () => {
+    const store = await started();
+    await playOut(store);
+
+    await restartOn("debrief");
+
+    expect(find(BRIEFING_SCREEN_TEST_ID)).not.toBeNull();
+    expect(find(NEW_HUNT_TEST_ID)).not.toBeNull();
+    expect(find(DEBRIEF_SCREEN_TEST_ID)).toBeNull();
+    expect(find(SHARE_LINK_TEST_ID)).toBeNull();
+    expect(store.getState().hunt).toBeNull();
+  });
+
+  it("starts the next hunt from the briefing it restarted to", async () => {
+    const store = await started();
+    await playOut(store);
+    await restartOn("debrief");
+
+    await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));
+
+    expect(find(DISPATCH_SCREEN_TEST_ID)).not.toBeNull();
+    expect(turnOf(store)).toBe(0);
+  });
 });
 
 describe("a share link that failed to load (PLAN M5.6b-2)", () => {
@@ -500,10 +605,178 @@ describe("a share link that failed to load (PLAN M5.6b-2)", () => {
     expect(find(SHARE_LINK_LOAD_ERROR_TEST_ID)).not.toBeNull();
   });
 
+  it("is cleared by the briefing's restart, which keeps the form (PLAN M6.9)", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+    await act(async () => store.getState().loadShared("not a replay"));
+
+    await restartOn("briefing");
+
+    expect(find(SHARE_LINK_LOAD_ERROR_TEST_ID)).toBeNull();
+    expect(find(NEW_HUNT_TEST_ID)).not.toBeNull();
+  });
+
+  it("puts back the seed the player had typed over when the briefing resets", async () => {
+    await render(createGameStore(TEST_GAME_DEPS, BALANCE));
+    const seed = find(NEW_HUNT_SEED_TEST_ID);
+    if (!(seed instanceof HTMLInputElement)) throw new Error("expected the seed field");
+    const defaultSeed = seed.value;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set as (
+      this: HTMLInputElement,
+      value: string,
+    ) => void;
+    await act(async () => {
+      setValue.call(seed, "not a seed");
+      seed.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect((find(NEW_HUNT_SEED_TEST_ID) as HTMLInputElement).value).toBe("not a seed");
+
+    await restartOn("briefing");
+
+    expect((find(NEW_HUNT_SEED_TEST_ID) as HTMLInputElement).value).toBe(defaultSeed);
+  });
+
   it("names the outcome the hunt actually ended with", async () => {
     const store = await started();
     await playOut(store);
 
     expect(find(END_SCREEN_OUTCOME_TEST_ID)?.getAttribute("data-outcome")).toBe(outcomeOf(store));
+  });
+});
+
+/**
+ * PLAN M6.10's focus-order pass, on the tab sequence jsdom can compute: the document order of
+ * everything Tab stops on, since no element in the app sets a positive `tabindex` to reorder it.
+ * What a real browser adds - that focus is visible where it lands - is `index.css`'s
+ * `:focus-visible` rule, which is not jsdom's to check.
+ */
+const TABBABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
+const tabStops = (): readonly Element[] => Array.from(container?.querySelectorAll(TABBABLE) ?? []);
+
+const positiveTabIndexes = (): readonly Element[] =>
+  Array.from(container?.querySelectorAll("[tabindex]") ?? []).filter(
+    (element) => Number(element.getAttribute("tabindex")) > 0,
+  );
+
+const skipLink = (name: string): Element | null =>
+  container?.querySelector(`[data-testid="${SKIP_LINK_TEST_ID}"][data-skip="${name}"]`) ?? null;
+
+describe("the focus order (PLAN M6.10)", () => {
+  it("never reorders Tab with a positive tabindex, on any screen", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+    expect(positiveTabIndexes()).toEqual([]);
+
+    await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));
+    expect(positiveTabIndexes()).toEqual([]);
+
+    await playOut(store);
+    expect(positiveTabIndexes()).toEqual([]);
+  });
+
+  it("reaches the briefing's seed before its start button", async () => {
+    await render(createGameStore(TEST_GAME_DEPS, BALANCE));
+
+    const stops = tabStops();
+    const seed = stops.indexOf(find(NEW_HUNT_SEED_TEST_ID) as Element);
+    const submit = stops.findIndex((stop) => stop.getAttribute("type") === "submit");
+
+    expect(seed).toBeGreaterThanOrEqual(0);
+    expect(submit).toBeGreaterThan(seed);
+  });
+
+  it("stops on the skip link first on the board, before any map target", async () => {
+    await started();
+
+    const stops = tabStops();
+    const firstMapStop = stops.findIndex((stop) => find(MAP_TEST_ID)?.contains(stop));
+
+    expect(stops[0]).toBe(skipLink("command"));
+    expect(firstMapStop).toBeGreaterThan(0);
+  });
+
+  it("goes rail, map, intel, command, so End Turn comes after the board it confirms", async () => {
+    await started();
+
+    const regions = [
+      APP_FRAME_RAIL_TEST_ID,
+      APP_FRAME_MAP_TEST_ID,
+      APP_FRAME_INTEL_TEST_ID,
+      APP_FRAME_COMMAND_TEST_ID,
+    ];
+    const stops = tabStops();
+    const regionIndexes = stops
+      .map((stop) => regions.findIndex((region) => find(region)?.contains(stop)))
+      .filter((index) => index >= 0);
+
+    expect(regionIndexes).toEqual([...regionIndexes].sort((first, second) => first - second));
+    expect(new Set(regionIndexes)).toContain(regions.indexOf(APP_FRAME_MAP_TEST_ID));
+    expect(stops.indexOf(find(END_TURN_TEST_ID) as Element)).toBeGreaterThan(
+      stops.findIndex((stop) => find(ACTION_PANEL_TEST_ID)?.contains(stop)),
+    );
+  });
+
+  it("jumps past every map target to the command region from the skip link", async () => {
+    await started();
+
+    await clickOn(skipLink("command") as Element);
+
+    expect(document.activeElement).toBe(find(APP_FRAME_COMMAND_TEST_ID));
+    expect(find(APP_FRAME_COMMAND_TEST_ID)?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("gives the debrief's replay a skip link past its map, to the replay controls", async () => {
+    const store = await started();
+    await playOut(store);
+
+    const stops = tabStops();
+    const link = skipLink("replay-controls");
+    const firstMapStop = stops.findIndex((stop) => find(MAP_TEST_ID)?.contains(stop));
+
+    expect(stops.indexOf(link as Element)).toBeLessThan(firstMapStop);
+    await clickOn(link as Element);
+    expect(document.activeElement).toBe(find(REPLAY_SCRUBBER_TEST_ID));
+  });
+});
+
+describe("the heatmap's text equivalent (PLAN M6.10)", () => {
+  it("sits in the map region, ahead of the map, so it is read before the map's targets", async () => {
+    await started();
+
+    const summary = find(HEATMAP_SUMMARY_TEST_ID);
+    const map = find(MAP_TEST_ID);
+
+    expect(find(APP_FRAME_MAP_TEST_ID)?.contains(summary)).toBe(true);
+    expect(map === null ? 0 : summary?.compareDocumentPosition(map)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("lists the view's suspects, bounded, and matches the heat the map draws", async () => {
+    await started();
+
+    const listed = all(HEATMAP_SUSPECT_TEST_ID);
+    const heated = all(BELIEF_HEAT_TEST_ID).map((blob) => blob.getAttribute("data-nodeid"));
+
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.length).toBeLessThanOrEqual(LIMITS.maxHeatmapSummaryEntries);
+    for (const row of listed) {
+      expect(heated.some((nodeId) => row.textContent?.startsWith(`${nodeId} - `))).toBe(true);
+    }
+  });
+
+  it("is read out on the debrief's replay too", async () => {
+    const store = await started();
+    await playOut(store);
+
+    expect(find(REPLAY_SCREEN_TEST_ID)?.contains(find(HEATMAP_SUMMARY_TEST_ID))).toBe(true);
   });
 });

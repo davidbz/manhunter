@@ -17,7 +17,8 @@
  */
 
 import type { Hour, HunterView } from "@manhunter/core";
-import { PALETTE } from "./theme";
+import type { CSSProperties } from "react";
+import { METER_THEME, PALETTE } from "./theme";
 
 /**
  * Declared as data so the list and the type cannot drift, and so a test can assert that every
@@ -27,7 +28,30 @@ export const METER_KINDS = ["action_points", "budget", "trust", "pressure", "clo
 
 export type MeterKind = (typeof METER_KINDS)[number];
 
-/** One meter, ready to draw. `display` is the reading; `value`, `min` and `max` are the bar. */
+/**
+ * How a meter is cut into segments (PLAN M6.8). A `unit` meter counts whole things - action
+ * points, turns - so it gets one segment per unit and a player can count what is left; a `scaled`
+ * meter is a quantity with a large range and gets the stylesheet's fixed count instead.
+ */
+export type MeterSegmenting = "unit" | "scaled";
+
+export const METER_SEGMENTING: Readonly<Record<MeterKind, MeterSegmenting>> = {
+  action_points: "unit",
+  budget: "scaled",
+  trust: "scaled",
+  pressure: "scaled",
+  clock: "unit",
+};
+
+export type MeterTheme = {
+  /** The most segments a `unit` meter is drawn with; a wider range falls back to `scaled`. */
+  readonly maxUnitSegments: number;
+};
+
+/**
+ * One meter, ready to draw. `display` is the reading; `value`, `min` and `max` are the bar.
+ * `segments` is the unit count a `unit` meter is cut into, or `null` for the stylesheet default.
+ */
 export type Meter = {
   readonly kind: MeterKind;
   readonly label: string;
@@ -35,7 +59,10 @@ export type Meter = {
   readonly min: number;
   readonly max: number;
   readonly display: string;
+  readonly segments: number | null;
 };
+
+type MeterReading = Omit<Meter, "segments">;
 
 /**
  * The part of `balance.hunter` the meters are scaled by. Structural rather than `Balance` itself,
@@ -69,6 +96,7 @@ export const METER_LABELS: Readonly<Record<MeterKind, string>> = {
 };
 
 const METERS_LABEL = "Hunter meters";
+const METERS_TITLE = "Status";
 const OF_SEPARATOR = " of ";
 const CLOCK_SEPARATOR = " - turn ";
 const REMAINING_SUFFIX = " left";
@@ -98,7 +126,17 @@ const clockDisplay = (view: HunterView, totalTurns: number): string =>
     REMAINING_SUFFIX,
   ].join("");
 
-export const metersOf = (view: HunterView, bounds: MeterBounds): readonly Meter[] => {
+/** One segment per unit, while that stays countable; otherwise the stylesheet's default. */
+export const segmentsOf = (reading: MeterReading, theme: MeterTheme): number | null => {
+  if (METER_SEGMENTING[reading.kind] === "scaled") return null;
+
+  const span = reading.max - reading.min;
+  if (span < 1 || span > theme.maxUnitSegments) return null;
+
+  return span;
+};
+
+const readingsOf = (view: HunterView, bounds: MeterBounds): readonly MeterReading[] => {
   const { hunter, clock } = view;
   const totalTurns = clock.turn + view.turnsRemaining;
 
@@ -146,6 +184,27 @@ export const metersOf = (view: HunterView, bounds: MeterBounds): readonly Meter[
   ];
 };
 
+export const metersOf = (
+  view: HunterView,
+  bounds: MeterBounds,
+  theme: MeterTheme = METER_THEME,
+): readonly Meter[] =>
+  readingsOf(view, bounds).map((reading) => ({
+    ...reading,
+    segments: segmentsOf(reading, theme),
+  }));
+
+/**
+ * `index.css` reads the segment count from this custom property; `theme.ts` publishes its default
+ * on the root, and a `unit` meter overrides it here on its own element.
+ */
+type MeterStyle = CSSProperties & { readonly "--mh-meter-segments"?: number };
+
+const meterStyleOf = (meter: Meter): MeterStyle =>
+  meter.segments === null
+    ? { accentColor: PALETTE.accent }
+    : { accentColor: PALETTE.accent, "--mh-meter-segments": meter.segments };
+
 /**
  * **A native `<meter>`, kept rather than swapped, closing the standing Inbox item (PLAN M5.7).**
  * The Inbox's other option - `role="meter"` on a styled div - is not available: Biome's
@@ -159,32 +218,44 @@ export const metersOf = (view: HunterView, bounds: MeterBounds): readonly Meter[
  * the standards-correct property, harmless where the browser ignores it, and effective wherever a
  * `<meter>` does respect it - and the finding is recorded in this task's Inbox note rather than
  * worked around with a suppressed lint rule.
+ *
+ * **PLAN M6.8 then styles it from the stylesheet**, which is the option M5.7 did not have:
+ * `appearance: none` plus the vendor `::-webkit-meter-*` and `::-moz-meter-bar` pseudo-elements
+ * replace Chromium's heuristic colours with the board's own, and a mask cuts the bar into chunky
+ * segments. `accentColor` stays inline, where `meters.test.tsx` pins it.
  */
 const MeterReadout = ({ meter }: { readonly meter: Meter }) => (
   <div
+    className="mh-meter"
     data-testid={METER_TEST_ID}
     data-meter={meter.kind}
     data-value={meter.value}
     data-min={meter.min}
     data-max={meter.max}
+    data-segments={meter.segments ?? undefined}
   >
-    <dt>{meter.label}</dt>
-    <dd>
+    <dt className="mh-meter__label">{meter.label}</dt>
+    <dd className="mh-meter__reading">
+      {/* Keyed by what it reads, so a moved meter remounts and replays its motion (PLAN M6.10). */}
+      <span key={meter.display} className="mh-meter__value" data-testid={METER_VALUE_TEST_ID}>
+        {meter.display}
+      </span>
       <meter
+        className="mh-meter__bar"
         aria-label={meter.label}
         min={meter.min}
         max={meter.max}
         value={meter.value}
-        style={{ accentColor: PALETTE.accent }}
+        style={meterStyleOf(meter)}
       />
-      <span data-testid={METER_VALUE_TEST_ID}>{meter.display}</span>
     </dd>
   </div>
 );
 
 export const Meters = ({ view, bounds }: MetersProps) => (
-  <section aria-label={METERS_LABEL} data-testid={METERS_TEST_ID}>
-    <dl>
+  <section aria-label={METERS_LABEL} className="mh-card" data-testid={METERS_TEST_ID}>
+    <h2 className="mh-card__title">{METERS_TITLE}</h2>
+    <dl className="mh-meters">
       {metersOf(view, bounds).map((meter) => (
         <MeterReadout key={meter.kind} meter={meter} />
       ))}

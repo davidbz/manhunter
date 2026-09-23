@@ -27,6 +27,8 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { createClipboardLogic } from "./clipboard";
+import { ClipboardProvider } from "./clipboardcontext";
 import { cssVariablesOf } from "./cssvariables";
 import { createGameStore } from "./gamestore";
 import { replayParamOf } from "./sharelinkurl";
@@ -74,6 +76,19 @@ if (sharedReplay !== null) {
   store.getState().loadShared(sharedReplay);
 }
 
+/**
+ * The clipboard the debrief copies its share link to (PLAN M6.9). `navigator.clipboard` is absent
+ * outside a secure context, which `clipboard.ts` reports rather than throws, so it is handed over
+ * as `null` there instead of being checked by every caller.
+ */
+const clipboard = createClipboardLogic({
+  writer: navigator.clipboard ?? null,
+  wait: (milliseconds) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, milliseconds);
+    }),
+});
+
 const mount = document.getElementById(MOUNT_ELEMENT_ID);
 if (!mount) {
   throw new Error(`index.html is missing the #${MOUNT_ELEMENT_ID} mount point`);
@@ -99,7 +114,9 @@ for (const [name, value] of Object.entries(cssVariablesOf(DESIGN_TOKENS))) {
 createRoot(mount).render(
   <StrictMode>
     <GameStoreProvider store={store}>
-      <App />
+      <ClipboardProvider clipboard={clipboard}>
+        <App />
+      </ClipboardProvider>
     </GameStoreProvider>
   </StrictMode>,
 );

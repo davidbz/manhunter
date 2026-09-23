@@ -2,14 +2,18 @@ import { type HunterAction, makeEdgeId, makeNodeId } from "@manhunter/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { ACTION_ICON_TEST_ID } from "./actionicon";
 import type { ActionQueue, QueueRefusal } from "./actionqueue";
 import { LIMITS } from "./limits";
 import {
   END_TURN_TEST_ID,
+  lineNumberOf,
   QUEUE_ADD_TEST_ID,
+  QUEUE_COUNT_TEST_ID,
   QUEUE_REFUSAL_TEST_ID,
   QUEUE_REMOVE_TEST_ID,
   QUEUE_ROW_TEST_ID,
+  queueCountText,
   queueRefusalMessage,
   TURN_QUEUE_TEST_ID,
   TurnQueue,
@@ -158,5 +162,31 @@ describe("the turn queue", () => {
     const refusal = find(QUEUE_REFUSAL_TEST_ID);
     expect(refusal?.getAttribute("data-refusal")).toBe("too_many_queued");
     expect(refusal?.textContent).toBe(queueRefusalMessage(TOO_MANY));
+  });
+});
+
+describe("the dispatch order form (PLAN M6.8)", () => {
+  it("numbers lines from one, padded to a column", () => {
+    expect(lineNumberOf(0)).toBe("01");
+    expect(lineNumberOf(LIMITS.maxQueuedActions - 1)).toBe(String(LIMITS.maxQueuedActions));
+  });
+
+  it("counts the lines used against the queue's bound", async () => {
+    await render({ queue: [BLOCK, CANVASS] });
+
+    expect(find(QUEUE_COUNT_TEST_ID)?.textContent).toBe(queueCountText(2, LIMITS.maxQueuedActions));
+    expect(queueCountText(2, LIMITS.maxQueuedActions)).toBe(`2 / ${LIMITS.maxQueuedActions} lines`);
+  });
+
+  it("gives every line its number and its action's icon", async () => {
+    await render({ queue: [BLOCK, CANVASS] });
+
+    const rows = all(QUEUE_ROW_TEST_ID);
+    expect(rows.map((row) => row.textContent?.slice(0, 2))).toEqual(["01", "02"]);
+    expect(
+      rows.map((row) =>
+        row.querySelector(`[data-testid="${ACTION_ICON_TEST_ID}"]`)?.getAttribute("data-icon"),
+      ),
+    ).toEqual(["roadblock", "canvass"]);
   });
 });

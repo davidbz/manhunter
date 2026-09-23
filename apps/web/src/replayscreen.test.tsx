@@ -3,9 +3,10 @@ import { BALANCE } from "@manhunter/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { BELIEF_LEGEND_TEST_ID } from "./belieflegend";
 import { CRIMINAL_PATH_MARKER_TEST_ID } from "./criminalpath";
 import { createGameStore, type GameStore } from "./gamestore";
-import { REPLAY_SCREEN_TEST_ID, ReplayScreen } from "./replayscreen";
+import { REPLAY_MAP_TEST_ID, REPLAY_SCREEN_TEST_ID, ReplayScreen } from "./replayscreen";
 import { REPLAY_SCRUBBER_INPUT_TEST_ID, REPLAY_SCRUBBER_TURN_TEST_ID } from "./replayscrubber";
 import { GameStoreProvider } from "./storecontext";
 import { TEST_GAME_DEPS } from "./wiring.testfixture";
@@ -123,5 +124,15 @@ describe("the replay screen", () => {
       expect(one(REPLAY_SCRUBBER_TURN_TEST_ID)?.textContent).toContain(String(expected.turn));
       expect(markerNodeId()).toBe(String(expected.criminalNodeId));
     }
+  });
+
+  it("sizes the map in its own container and keys it with the legend (PLAN M6.9)", async () => {
+    const store = createGameStore(TEST_GAME_DEPS, BALANCE);
+    await render(store);
+    await act(async () => store.getState().start({ setup: SETUP, seed: SEED }));
+    await playOut(store);
+
+    expect(one(REPLAY_MAP_TEST_ID)?.querySelector("svg")).not.toBeNull();
+    expect(one(BELIEF_LEGEND_TEST_ID)).not.toBeNull();
   });
 });

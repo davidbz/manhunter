@@ -3,8 +3,11 @@ import { makeNodeId, makeReportId, UNKNOWN_TRAVEL_MODE } from "@manhunter/core";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { AVATAR_TEST_ID } from "./avatarportrait";
 import { LIMITS } from "./limits";
 import {
+  ageText,
+  REPORT_AGE_TEST_ID,
   REPORT_CONTENT_TEST_ID,
   REPORT_ENTRY_TEST_ID,
   REPORT_FEED_EMPTY_TEST_ID,
@@ -12,8 +15,11 @@ import {
   REPORT_FEED_TEST_ID,
   REPORT_OBSERVED_TEST_ID,
   REPORT_RECEIVED_TEST_ID,
+  REPORT_RELIABILITY_TEST_ID,
   ReportFeed,
+  reliabilityText,
 } from "./reportfeed";
+import { FEED_ROW_THEME } from "./theme";
 
 /**
  * The feed under jsdom, per the plan's "How much of M5 is Playwright's": M5.4 asserts here.
@@ -212,5 +218,80 @@ describe("the report feed's bound", () => {
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-reportid")).toEqual(["report-late"]);
     expect(one(REPORT_FEED_OVERFLOW_TEST_ID)?.getAttribute("data-withheld")).toBe("1");
+  });
+});
+
+describe("the report feed's row chrome (PLAN M6.8)", () => {
+  const bySource = (["cctv", "patrol", "witness", "tip"] as const).map((source, index) =>
+    report({ id: `report-${source}`, source, observedAtTurn: NOW, receivedAtTurn: NOW - index }),
+  );
+
+  it("badges each row with its source's weight from BALANCE", async () => {
+    await render(<ReportFeed reports={bySource} currentTurn={NOW} />);
+
+    expect(attributes(REPORT_RELIABILITY_TEST_ID, "data-reliability")).toEqual([
+      "high",
+      "fair",
+      "fair",
+      "low",
+    ]);
+    expect(texts(REPORT_RELIABILITY_TEST_ID)).toEqual(["Rel 90%", "Rel 60%", "Rel 50%", "Rel 20%"]);
+  });
+
+  it("reads the weights it is given rather than its own", async () => {
+    const weights = { cctv: 0.1, patrol: 0.1, witness: 0.1, tip: 0.8 };
+
+    await render(
+      <ReportFeed reports={[bySource[3] ?? LATE]} currentTurn={NOW} sourceWeights={weights} />,
+    );
+
+    expect(attributes(REPORT_RELIABILITY_TEST_ID, "data-reliability")).toEqual(["high"]);
+    expect(attributes(REPORT_RELIABILITY_TEST_ID, "data-weight")).toEqual(["0.8"]);
+  });
+
+  it("ages each row from when it was observed, not when it arrived", async () => {
+    const fresh = report({ id: "r-fresh", observedAtTurn: NOW, receivedAtTurn: NOW });
+    const aging = report({
+      id: "r-aging",
+      observedAtTurn: NOW - FEED_ROW_THEME.agingFromAge,
+      receivedAtTurn: NOW - 1,
+    });
+    const stale = report({
+      id: "r-stale",
+      observedAtTurn: NOW - FEED_ROW_THEME.staleFromAge,
+      receivedAtTurn: NOW - 2,
+    });
+
+    await render(<ReportFeed reports={[fresh, aging, stale]} currentTurn={NOW} />);
+
+    expect(attributes(REPORT_ENTRY_TEST_ID, "data-staleness")).toEqual(["fresh", "aging", "stale"]);
+    expect(attributes(REPORT_ENTRY_TEST_ID, "data-age")).toEqual([
+      "0",
+      String(FEED_ROW_THEME.agingFromAge),
+      String(FEED_ROW_THEME.staleFromAge),
+    ]);
+    expect(texts(REPORT_AGE_TEST_ID)).toEqual([
+      ageText(0),
+      ageText(FEED_ROW_THEME.agingFromAge),
+      ageText(FEED_ROW_THEME.staleFromAge),
+    ]);
+  });
+
+  it("says a report of this turn is live and an older one how old", () => {
+    expect(ageText(0)).toBe("Live");
+    expect(ageText(3)).toBe("3h old");
+    expect(reliabilityText(0.5)).toBe("Rel 50%");
+  });
+
+  it("draws one source face per row, and never the criminal's", async () => {
+    await render(<ReportFeed reports={bySource} currentTurn={NOW} />);
+
+    expect(all(AVATAR_TEST_ID)).toHaveLength(bySource.length);
+    expect(attributes(AVATAR_TEST_ID, "data-subject")).toEqual([
+      "cctv",
+      "patrol",
+      "witness",
+      "tip",
+    ]);
   });
 });
