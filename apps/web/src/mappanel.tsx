@@ -13,11 +13,20 @@
  *
  * `selectableKind` passes through untouched (PLAN M6.5): the screen that owns the armed action is
  * the one that knows what it can target.
+ *
+ * `onFocusNode` passes through too (PLAN M7.2): the focused node is the dispatch screen's state.
+ * So do `onHoverTarget`, `onCancel` and the `plan` layer (PLAN M7.3): the plan is that screen's.
+ *
+ * The place names (PLAN M7.1) are the hunt's, seeded by its case number and memoised per hunt in
+ * `mapnodes.ts`, so the map's labels agree with the feed's and the queue's.
  */
 
 import type { ReactNode } from "react";
+import type { MapHoverHandler } from "./maphover";
+import { huntPlaceNamesOf } from "./mapnodes";
 import { MapRenderer, type MapSelection } from "./maprenderer";
 import type { MapSelectable } from "./mapselectable";
+import type { NodeFocusHandler } from "./nodefocus";
 import { useGameStore } from "./storecontext";
 
 export type MapPanelProps = {
@@ -25,6 +34,10 @@ export type MapPanelProps = {
   readonly onSelect: (selection: MapSelection) => void;
   readonly overlay?: ReactNode;
   readonly selectableKind?: MapSelectable | null;
+  readonly onFocusNode?: NodeFocusHandler | undefined;
+  readonly onHoverTarget?: MapHoverHandler | undefined;
+  readonly onCancel?: (() => void) | undefined;
+  readonly plan?: ReactNode;
 };
 
 export const MapPanel = ({
@@ -32,10 +45,15 @@ export const MapPanel = ({
   onSelect,
   overlay,
   selectableKind = null,
+  onFocusNode,
+  onHoverTarget,
+  onCancel,
+  plan,
 }: MapPanelProps) => {
   const view = useGameStore((state) => state.hunt?.view ?? null);
   const daylight = useGameStore((state) => state.balance.time);
-  if (!view) return null;
+  const placeNames = useGameStore(huntPlaceNamesOf);
+  if (!view || !placeNames) return null;
 
   return (
     <MapRenderer
@@ -45,6 +63,11 @@ export const MapPanel = ({
       overlay={overlay}
       daylight={daylight}
       selectableKind={selectableKind}
+      placeNames={placeNames}
+      onFocusNode={onFocusNode}
+      onHoverTarget={onHoverTarget}
+      onCancel={onCancel}
+      plan={plan}
     />
   );
 };

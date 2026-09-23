@@ -18,6 +18,7 @@
 import type { ActionRejection, HunterAction, PlanningRejection } from "@manhunter/core";
 import { actionSummary } from "./actionqueue";
 import type { StoreRefusal } from "./gamestore";
+import type { PlaceNames } from "./placenames";
 
 const AT_MOST = ", at most ";
 const NEEDS = " needs ";
@@ -103,6 +104,7 @@ const MISSING_ACTION_LABEL = "Queued action";
 export const rejectedRows = (
   dispatched: readonly HunterAction[],
   rejections: readonly PlanningRejection[],
+  names: PlaceNames,
 ): readonly RejectedRow[] =>
   rejections.map((rejection) => {
     const action = dispatched[rejection.index];
@@ -110,7 +112,7 @@ export const rejectedRows = (
     return {
       index: rejection.index,
       kind: rejection.reason.kind,
-      action: action === undefined ? MISSING_ACTION_LABEL : actionSummary(action),
+      action: action === undefined ? MISSING_ACTION_LABEL : actionSummary(action, names),
       message: rejectionMessage(rejection.reason),
     };
   });
@@ -127,10 +129,17 @@ export type DispatchErrorsProps = {
   /** The queue the last recorded turn was played with, which is what the indices point into. */
   readonly dispatched: readonly HunterAction[];
   readonly rejections: readonly PlanningRejection[];
+  /** What each place is called (PLAN M7.1). A rejected row names its target by this. */
+  readonly placeNames: PlaceNames;
 };
 
-export const DispatchErrors = ({ refusal, dispatched, rejections }: DispatchErrorsProps) => {
-  const rows = rejectedRows(dispatched, rejections);
+export const DispatchErrors = ({
+  refusal,
+  dispatched,
+  rejections,
+  placeNames,
+}: DispatchErrorsProps) => {
+  const rows = rejectedRows(dispatched, rejections, placeNames);
   if (refusal === null && rows.length === 0) return null;
 
   return (

@@ -11,6 +11,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  forecastSpanOf,
+  METER_FORECAST_TEST_ID,
   METER_KINDS,
   METER_LABELS,
   METER_TEST_ID,
@@ -216,5 +218,88 @@ describe("the meter segments (PLAN M6.8)", () => {
     );
 
     expect(clock?.segments).toBeNull();
+  });
+});
+
+describe("the plan's forecast (PLAN M7.4)", () => {
+  const PLANNED_POINTS = 0;
+  const PLANNED_BUDGET = 540;
+  const PLANNED_TRUST = 49;
+  const REMAINING = { actionPoints: PLANNED_POINTS, budget: PLANNED_BUDGET, trust: PLANNED_TRUST };
+
+  const forecastOn = (kind: string): Element | null =>
+    meterOf(kind)?.querySelector(`[data-testid="${METER_FORECAST_TEST_ID}"]`) ?? null;
+
+  it("forecasts nothing while no plan is given", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} />);
+
+    expect(all(METER_FORECAST_TEST_ID)).toHaveLength(0);
+    for (const kind of METER_KINDS)
+      expect(meterOf(kind)?.hasAttribute("data-forecast")).toBe(false);
+  });
+
+  it("reads where the plan takes each meter it moves", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} remaining={REMAINING} />);
+
+    expect(readingOf("action_points")).toBe(
+      `${ACTION_POINTS} -> ${PLANNED_POINTS} of ${BOUNDS.actionPointsPerTurn}`,
+    );
+    expect(readingOf("budget")).toBe(`${BUDGET} -> ${PLANNED_BUDGET} of ${BOUNDS.startingBudget}`);
+    expect(readingOf("trust")).toBe(`${TRUST} -> ${PLANNED_TRUST} of ${BOUNDS.trustMax}`);
+    expect(meterOf("budget")?.getAttribute("data-forecast")).toBe(String(PLANNED_BUDGET));
+  });
+
+  it("keeps data-value and the bar on what the hunter holds, not on the forecast", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} remaining={REMAINING} />);
+
+    expect(meterOf("action_points")?.getAttribute("data-value")).toBe(String(ACTION_POINTS));
+    expect(meterOf("budget")?.getAttribute("data-value")).toBe(String(BUDGET));
+    expect(meterOf("trust")?.getAttribute("data-value")).toBe(String(TRUST));
+    const bar = meterOf("budget")?.querySelector("meter");
+    expect(bar?.getAttribute("value")).toBe(String(BUDGET));
+  });
+
+  it("never forecasts pressure or the clock, which no order moves", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} remaining={REMAINING} />);
+
+    expect(forecastOn("pressure")).toBeNull();
+    expect(forecastOn("clock")).toBeNull();
+    expect(readingOf("pressure")).toBe(`${PRESSURE} of ${BOUNDS.pressureMax}`);
+  });
+
+  it("hatches the stretch of bar the plan spends, between what is held and what is left", async () => {
+    await render(<Meters view={viewWith()} bounds={BOUNDS} remaining={REMAINING} />);
+
+    const hatch = forecastOn("budget") as HTMLElement | null;
+    expect(hatch?.getAttribute("data-direction")).toBe("spend");
+    expect(Number(hatch?.style.getPropertyValue("--mh-meter-forecast-from"))).toBeCloseTo(
+      PLANNED_BUDGET / BOUNDS.startingBudget,
+    );
+    expect(Number(hatch?.style.getPropertyValue("--mh-meter-forecast-to"))).toBeCloseTo(
+      BUDGET / BOUNDS.startingBudget,
+    );
+  });
+
+  it("marks a gain as a gain", () => {
+    const gained = { ...REMAINING, trust: TRUST + 4 };
+    const trust = metersOf(viewWith(), BOUNDS, gained).find((meter) => meter.kind === "trust");
+
+    expect(trust && forecastSpanOf(trust)?.direction).toBe("gain");
+  });
+
+  it("draws an overspend to the end of the bar, and still reads how far over it goes", () => {
+    const overspent = { ...REMAINING, budget: -BUDGET };
+    const budget = metersOf(viewWith(), BOUNDS, overspent).find((meter) => meter.kind === "budget");
+
+    expect(budget && forecastSpanOf(budget)?.from).toBe(0);
+    expect(budget?.display).toBe(`${BUDGET} -> ${-BUDGET} of ${BOUNDS.startingBudget}`);
+  });
+
+  it("hatches nothing on a meter the plan leaves where it is", () => {
+    const level = { actionPoints: ACTION_POINTS, budget: BUDGET, trust: TRUST };
+
+    expect(metersOf(viewWith(), BOUNDS, level).every((meter) => meter.forecast === null)).toBe(
+      true,
+    );
   });
 });

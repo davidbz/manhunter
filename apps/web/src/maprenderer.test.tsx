@@ -35,6 +35,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import STYLESHEET from "./index.css?raw";
+import { MAP_PLACE_TITLE_TEST_ID } from "./mapactors";
+import { placeNamesFor } from "./mapnodes";
 import {
   EDGE_LAYERS,
   MAP_BLOCK_CELL_TEST_ID,
@@ -52,17 +54,22 @@ import {
   MAP_NODE_TEST_ID,
   MAP_OVERLAY_TEST_ID,
   MAP_PIP_TEST_ID,
+  MAP_PLAN_TEST_ID,
   MAP_PLATE_TEST_ID,
   MAP_RIVER_CHANNEL_TEST_ID,
   MAP_RIVER_CURRENT_TEST_ID,
   MAP_RIVER_TEST_ID,
   MAP_SELECTION_TEST_ID,
+  MAP_STREET_LABEL_TEST_ID,
+  MAP_STREET_LABELS_TEST_ID,
   MAP_TEST_ID,
   MAP_WASH_TEST_ID,
   MapRenderer,
   type MapSelection,
   ROAD_GLOW_FILTER_ID,
+  UNSEEDED_PLACE_NAMES,
 } from "./maprenderer";
+import { edgeNameOf, nodeNameOf } from "./placenames";
 
 /**
  * The renderer driven the way a player drives it, under the jsdom environment PLAN M5.2 installs
@@ -369,6 +376,78 @@ describe("the map renderer", () => {
     expect(overlay?.getAttribute("style")).toContain("pointer-events: none");
   });
 
+  it("draws the plan layer last, above every target, taking no pointer events (PLAN M7.3)", async () => {
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={nothingSelected}
+        plan={<circle data-testid="plan-mark" r={1} />}
+      />,
+    );
+
+    const layer = one(MAP_PLAN_TEST_ID);
+    const map = one(MAP_TEST_ID);
+
+    expect(map?.lastElementChild).toBe(layer);
+    expect(layer?.querySelector('[data-testid="plan-mark"]')).not.toBeNull();
+    expect(layer?.getAttribute("style")).toContain("pointer-events: none");
+  });
+
+  it("cancels on a right-click, and keeps the browser menu away only while it listens", async () => {
+    let cancelled = 0;
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={nothingSelected}
+        onCancel={() => {
+          cancelled += 1;
+        }}
+      />,
+    );
+    const heard = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    await act(async () => {
+      one(MAP_TEST_ID)?.dispatchEvent(heard);
+    });
+
+    expect(cancelled).toBe(1);
+    expect(heard.defaultPrevented).toBe(true);
+  });
+
+  it("leaves a right-click alone when nothing listens for a cancel", async () => {
+    await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
+    const ignored = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    await act(async () => {
+      one(MAP_TEST_ID)?.dispatchEvent(ignored);
+    });
+
+    expect(ignored.defaultPrevented).toBe(false);
+  });
+
+  it("reports the target pointed at, and clears it on leaving (PLAN M7.3)", async () => {
+    const heard: (MapSelection | null)[] = [];
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={nothingSelected}
+        onHoverTarget={(target) => heard.push(target)}
+      />,
+    );
+    const road = all(MAP_EDGE_TEST_ID).find((edge) => edge.getAttribute("data-edgeid") === ROAD);
+    if (road === undefined) throw new Error("expected the road on the map");
+
+    await act(async () => {
+      road.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      road.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+    });
+
+    expect(heard).toEqual([{ kind: "edge", edgeId: ROAD }, null]);
+  });
+
   it("gives a map with nothing on it a finite canvas rather than an infinite one", async () => {
     const empty = viewWith({ river: false, edges: [] });
 
@@ -420,6 +499,33 @@ describe("the map renderer on a generated city", () => {
     expect(all(MAP_NODE_TEST_ID)).toHaveLength(view.map.nodes.length);
     expect(all(MAP_EDGE_TEST_ID)).toHaveLength(view.map.edges.length);
     expect(one(MAP_RIVER_TEST_ID)).not.toBeNull();
+  });
+
+  /** PLAN M7.1: every target's accessible name is its place name, never its id. */
+  it("names every node and edge by its place name rather than its id", async () => {
+    if (created.kind !== "game") throw new Error(`seed 1 produced no game: ${created.kind}`);
+    const view = toHunterView(created.world);
+
+    await render(<MapRenderer view={view} selection={null} onSelect={nothingSelected} />);
+
+    for (const node of all(MAP_NODE_TEST_ID)) {
+      expect(node.getAttribute("aria-label")).not.toContain(node.getAttribute("data-nodeid"));
+      expect(node.getAttribute("aria-label")).toMatch(/ & /);
+    }
+    for (const edge of all(MAP_EDGE_TEST_ID)) {
+      expect(edge.getAttribute("aria-label")).not.toContain(edge.getAttribute("data-edgeid"));
+    }
+  });
+
+  it("labels one avenue per column and one street per row of the generated grid", async () => {
+    if (created.kind !== "game") throw new Error(`seed 1 produced no game: ${created.kind}`);
+    const view = toHunterView(created.world);
+
+    await render(<MapRenderer view={view} selection={null} onSelect={nothingSelected} />);
+
+    const axes = all(MAP_STREET_LABEL_TEST_ID).map((label) => label.getAttribute("data-axis"));
+    expect(axes.filter((axis) => axis === "avenue")).toHaveLength(8);
+    expect(axes.filter((axis) => axis === "street")).toHaveLength(6);
   });
 });
 
@@ -600,6 +706,17 @@ describe("the map surface", () => {
     expect(one(MAP_WASH_TEST_ID)?.getAttribute("style")).toContain("pointer-events: none");
   });
 
+  /** PLAN M7.1: the street index goes after the blocks and before the river, taking no pointer. */
+  it("draws the street labels after the blocks and before the river", async () => {
+    await renderSurface();
+
+    const labels = one(MAP_STREET_LABELS_TEST_ID);
+    expect(drawnBefore(all(MAP_BLOCK_TEST_ID).at(-1) ?? null, labels)).toBe(true);
+    expect(drawnBefore(labels, one(MAP_RIVER_TEST_ID))).toBe(true);
+    expect(labels?.getAttribute("style")).toContain("pointer-events: none");
+    expect(labels?.getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("sizes the plate to the viewBox, so the ground covers the whole canvas", async () => {
     await renderSurface();
 
@@ -683,7 +800,7 @@ describe("the map actors (PLAN M6.5)", () => {
         view={viewWith()}
         selection={null}
         onSelect={(selection) => picked.push(selection)}
-        selectableKind={{ kind: "edge", edgeKinds: ["road", "bridge"] }}
+        selectableKind={{ kind: "edge", edgeKinds: ["road", "bridge"], closedEdgeIds: [] }}
       />,
     );
 
@@ -786,5 +903,68 @@ describe("the map actors (PLAN M6.5)", () => {
     await render(<MapRenderer view={viewWith()} selection={null} onSelect={nothingSelected} />);
 
     expect(one(MAP_INCIDENTS_TEST_ID)).toBeNull();
+  });
+});
+
+describe("the map's side of the hover link (PLAN M7.2)", () => {
+  const titleOf = (element: Element | undefined): string | null =>
+    element?.querySelector(`[data-testid="${MAP_PLACE_TITLE_TEST_ID}"]`)?.textContent ?? null;
+
+  it("names every node and every edge in a native title", async () => {
+    const view = viewWith();
+    const names = placeNamesFor(view.map, UNSEEDED_PLACE_NAMES, BALANCE.map.nodeSpacing);
+
+    await render(<MapRenderer view={view} selection={null} onSelect={nothingSelected} />);
+
+    expect(all(MAP_NODE_TEST_ID).map((each) => titleOf(each))).toEqual(
+      NODES.map((each) => nodeNameOf(names, each.id)),
+    );
+    expect(all(MAP_EDGE_TEST_ID).map((each) => titleOf(each))).toEqual(
+      EDGES.map((each) => edgeNameOf(names, each.id)),
+    );
+    expect(all(MAP_PLACE_TITLE_TEST_ID).every((each) => each.tagName === "title")).toBe(true);
+  });
+
+  it("focuses a node while it is pointed at or has keyboard focus, and lets go after", async () => {
+    const calls: (NodeId | null)[] = [];
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={nothingSelected}
+        onFocusNode={(nodeId) => calls.push(nodeId)}
+      />,
+    );
+    const border = withAttribute(MAP_NODE_TEST_ID, "data-nodeid", String(BORDER))[0];
+    if (!(border instanceof SVGElement)) throw new Error("the border node was not rendered");
+
+    await act(async () => {
+      border.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      border.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+    });
+    await act(async () => border.focus());
+    await act(async () => border.blur());
+
+    expect(calls).toEqual([BORDER, null, BORDER, null]);
+  });
+
+  it("selects nothing when a node is only pointed at", async () => {
+    const selected: MapSelection[] = [];
+    await render(
+      <MapRenderer
+        view={viewWith()}
+        selection={null}
+        onSelect={(selection) => selected.push(selection)}
+        onFocusNode={nothingSelected}
+      />,
+    );
+    const border = withAttribute(MAP_NODE_TEST_ID, "data-nodeid", String(BORDER))[0];
+    if (!border) throw new Error("the border node was not rendered");
+
+    await act(async () => {
+      border.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    });
+
+    expect(selected).toEqual([]);
   });
 });

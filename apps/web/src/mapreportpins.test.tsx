@@ -268,4 +268,46 @@ describe("the report pin layer", () => {
       /\.mh-map-pin\[data-staleness="stale"\]\s*\{\s*opacity:\s*var\(--mh-fade-stale\)/,
     );
   });
+
+  it("stays inert without a focus handler, as on the debrief's replay", async () => {
+    await drawn(viewWith(REPORTS));
+
+    expect(pinAt(PARK)?.getAttribute("style")).toBeNull();
+  });
+});
+
+describe("a pin as a handle on the hover link (PLAN M7.2)", () => {
+  const hovered = async (): Promise<readonly (NodeId | null)[]> => {
+    const calls: (NodeId | null)[] = [];
+    await render(
+      <MapRenderer
+        view={viewWith(REPORTS)}
+        selection={null}
+        onSelect={nothingSelected}
+        onFocusNode={(nodeId) => calls.push(nodeId)}
+      />,
+    );
+    const pin = pinAt(PARK);
+    if (pin === undefined) throw new Error("the park pin was not rendered");
+    await act(async () => {
+      pin.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      pin.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+    });
+
+    return calls;
+  };
+
+  it("focuses its node while pointed at, and lets go when the pointer leaves", async () => {
+    expect(await hovered()).toEqual([PARK, null]);
+  });
+
+  it("takes pointer events on its own painted shape, inside a layer that takes none", async () => {
+    await hovered();
+
+    // CSS keywords are case-insensitive, and jsdom serialises this one in lower case.
+    expect(pinAt(PARK)?.getAttribute("style")?.toLowerCase()).toContain(
+      "pointer-events: visiblepainted",
+    );
+    expect(one(MAP_REPORT_PINS_TEST_ID)?.getAttribute("style")).toContain("pointer-events: none");
+  });
 });

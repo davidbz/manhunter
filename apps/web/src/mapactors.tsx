@@ -21,8 +21,10 @@
 import type { DistrictType, ExitKind, MapNode, Position } from "@manhunter/core";
 import type { KeyboardEvent } from "react";
 import { angleOf, coordinate, MIDPOINT_FRACTION, midpointOf, segmentPathOf } from "./mapgeometry";
+import { type MapHoverHandler, mergedHandlersOf, optionalHoverHandlersOf } from "./maphover";
 import type { LocatedIncident } from "./mapincidents";
 import type { MapSelection, MapTheme, PlacedEdge } from "./maprenderer";
+import { type NodeFocusHandler, optionalNodeFocusHandlersOf } from "./nodefocus";
 
 /** A district chip: a plate the size of `size` carrying the type's glyph (PLAN M6.5). */
 export type MapPipStyle = {
@@ -95,6 +97,7 @@ export const MAP_FOCUS_TEST_ID = "map-focus";
 export const MAP_CHECKPOINT_TEST_ID = "map-checkpoint";
 export const MAP_INCIDENTS_TEST_ID = "map-incidents";
 export const MAP_INCIDENT_TEST_ID = "map-incident";
+export const MAP_PLACE_TITLE_TEST_ID = "map-place-title";
 
 /**
  * Class names `index.css` keys the interaction states on. Exported so the stylesheet test can check
@@ -131,7 +134,6 @@ const SQUARE_CAP = "square";
 const LABEL_SEPARATOR = " - ";
 const INCIDENT_LABEL = "incident";
 const HARM_LABEL = "civilian hurt";
-const EXIT_LABEL = "exit";
 
 /** Keys that pick the focused node or edge, so the map is reachable without a pointer. */
 const SELECT_KEYS: readonly string[] = ["Enter", " "];
@@ -146,6 +148,11 @@ const RETICLE_CORNERS: readonly (readonly [number, number])[] = [
   [1, 1],
   [-1, 1],
 ];
+
+/** The native tooltip naming a target (PLAN M7.2), so any hover on the plate names the place. */
+const PlaceTitle = ({ name }: { readonly name: string }) => (
+  <title data-testid={MAP_PLACE_TITLE_TEST_ID}>{name}</title>
+);
 
 const onSelectKey = (event: KeyboardEvent<SVGGElement>, select: () => void): void => {
   if (!SELECT_KEYS.includes(event.key)) return;
@@ -218,6 +225,17 @@ const MapReticle = ({ center, theme }: MapReticleProps) => {
   );
 };
 
+/**
+ * Where a barrier across the edge from `from` to `to` sits: at the midpoint, turned a quarter from
+ * the road. Exported because a planned roadblock (PLAN M7.3) is laid across the road the same way.
+ */
+export const barrierTransformOf = (from: Position, to: Position): string => {
+  const middle = midpointOf(from, to);
+  const across = angleOf(from, to) + QUARTER_TURN_DEGREES;
+
+  return `translate(${coordinate(middle.x)} ${coordinate(middle.y)}) rotate(${coordinate(across)})`;
+};
+
 type MapCheckpointProps = {
   readonly placed: PlacedEdge;
   readonly theme: MapTheme;
@@ -230,8 +248,6 @@ type MapCheckpointProps = {
  */
 const MapCheckpoint = ({ placed, theme }: MapCheckpointProps) => {
   const style = theme.checkpoint;
-  const middle = midpointOf(placed.from, placed.to);
-  const across = angleOf(placed.from, placed.to) + QUARTER_TURN_DEGREES;
   const half = style.length * MIDPOINT_FRACTION;
   const depth = style.thickness * MIDPOINT_FRACTION;
 
@@ -239,7 +255,7 @@ const MapCheckpoint = ({ placed, theme }: MapCheckpointProps) => {
     <g
       data-testid={MAP_CHECKPOINT_TEST_ID}
       data-edgeid={placed.edge.id}
-      transform={`translate(${coordinate(middle.x)} ${coordinate(middle.y)}) rotate(${coordinate(across)})`}
+      transform={barrierTransformOf(placed.from, placed.to)}
     >
       <g className={MAP_CLASSES.checkpoint}>
         <rect
@@ -324,23 +340,30 @@ const MapEdgeStrokes = ({ placed, selected, theme }: MapEdgeStrokesProps) => {
 
 export type MapEdgeLineProps = {
   readonly placed: PlacedEdge;
+  /** What the edge is called (PLAN M7.1); the accessible name, never the raw id. */
+  readonly name: string;
   readonly blocked: boolean;
   readonly selected: boolean;
   readonly selectable: boolean;
   readonly theme: MapTheme;
   readonly onSelect: (selection: MapSelection) => void;
+  /** Pointing at or focusing the edge previews the armed order on it (PLAN M7.3). */
+  readonly onHoverTarget?: MapHoverHandler | undefined;
 };
 
 export const MapEdgeLine = ({
   placed,
+  name,
   blocked,
   selected,
   selectable,
   theme,
   onSelect,
+  onHoverTarget,
 }: MapEdgeLineProps) => {
   const { edge, from, to } = placed;
-  const select = () => onSelect({ kind: "edge", edgeId: edge.id });
+  const target: MapSelection = { kind: "edge", edgeId: edge.id };
+  const select = () => onSelect(target);
 
   return (
     <g
@@ -348,7 +371,7 @@ export const MapEdgeLine = ({
       tabIndex={0}
       className={`${MAP_CLASSES.target} ${MAP_CLASSES.edge}`}
       aria-selected={selected}
-      aria-label={`${edge.id}${LABEL_SEPARATOR}${edge.kind}`}
+      aria-label={`${name}${LABEL_SEPARATOR}${edge.kind}`}
       data-testid={MAP_EDGE_TEST_ID}
       data-edgeid={edge.id}
       data-edgekind={edge.kind}
@@ -357,7 +380,9 @@ export const MapEdgeLine = ({
       data-selectable={selectable}
       onClick={select}
       onKeyDown={(event) => onSelectKey(event, select)}
+      {...optionalHoverHandlersOf(target, onHoverTarget)}
     >
+      <PlaceTitle name={name} />
       <MapEdgeStrokes placed={placed} selected={selected} theme={theme} />
       {blocked ? <MapCheckpoint placed={placed} theme={theme} /> : null}
       {selected ? <MapReticle center={midpointOf(from, to)} theme={theme} /> : null}
@@ -440,9 +465,9 @@ export type NodeFacts = {
   readonly harmed: boolean;
 };
 
-const nodeLabelOf = (node: MapNode, facts: NodeFacts): string => {
-  const parts = [String(node.id), node.districtType];
-  if (facts.exitKind !== undefined) parts.push(`${EXIT_LABEL} ${facts.exitKind}`);
+/** The place name already says the district, or the exit kind in its place (PLAN M7.1). */
+const nodeLabelOf = (name: string, facts: NodeFacts): string => {
+  const parts = [name];
   if (facts.isIncident) parts.push(INCIDENT_LABEL);
   if (facts.harmed) parts.push(HARM_LABEL);
 
@@ -451,22 +476,32 @@ const nodeLabelOf = (node: MapNode, facts: NodeFacts): string => {
 
 export type MapNodeMarkerProps = {
   readonly node: MapNode;
+  /** What the node is called (PLAN M7.1); the accessible name, never the raw id. */
+  readonly name: string;
   readonly facts: NodeFacts;
   readonly selected: boolean;
   readonly selectable: boolean;
   readonly theme: MapTheme;
   readonly onSelect: (selection: MapSelection) => void;
+  /** Pointing at or focusing the node puts it in focus (PLAN M7.2). Absent, it links nothing. */
+  readonly onFocusNode?: NodeFocusHandler | undefined;
+  /** Pointing at or focusing the node previews the armed order on it (PLAN M7.3). */
+  readonly onHoverTarget?: MapHoverHandler | undefined;
 };
 
 export const MapNodeMarker = ({
   node,
+  name,
   facts,
   selected,
   selectable,
   theme,
   onSelect,
+  onFocusNode,
+  onHoverTarget,
 }: MapNodeMarkerProps) => {
-  const select = () => onSelect({ kind: "node", nodeId: node.id });
+  const target: MapSelection = { kind: "node", nodeId: node.id };
+  const select = () => onSelect(target);
 
   return (
     <g
@@ -474,7 +509,7 @@ export const MapNodeMarker = ({
       tabIndex={0}
       className={`${MAP_CLASSES.target} ${MAP_CLASSES.node}`}
       aria-selected={selected}
-      aria-label={nodeLabelOf(node, facts)}
+      aria-label={nodeLabelOf(name, facts)}
       data-testid={MAP_NODE_TEST_ID}
       data-nodeid={node.id}
       data-district={node.districtType}
@@ -484,7 +519,12 @@ export const MapNodeMarker = ({
       data-exit={facts.exitKind}
       onClick={select}
       onKeyDown={(event) => onSelectKey(event, select)}
+      {...mergedHandlersOf(
+        optionalNodeFocusHandlersOf(node.id, onFocusNode),
+        optionalHoverHandlersOf(target, onHoverTarget),
+      )}
     >
+      <PlaceTitle name={name} />
       <MapNodeFocus node={node} theme={theme} />
       {facts.isIncident ? <MapIncidentRing node={node} theme={theme} /> : null}
       <MapPip node={node} theme={theme} />

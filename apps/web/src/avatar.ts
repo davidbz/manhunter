@@ -4,17 +4,19 @@
  * `avatarportrait.tsx` only draws what this returns. Nothing here knows a colour; the ramps are
  * named, and `theme.ts`'s `AVATAR_THEME` says what each one looks like.
  *
- * **The hash is written here rather than borrowed from `core`'s `Rng`.** `createRng` is a factory
- * the composition root owns (AGENTS.md "Inversion of control"), so taking it would mean threading
- * an injected logic object through every component that draws a face, for a draw that is
- * cosmetic, stateless and never has to agree with the simulation's stream. A splitmix32
- * finaliser over `seed` and the kind's salt is the whole requirement: same inputs, same face.
+ * **The hash is `seedhash.ts`'s**, not `core`'s `Rng`; that file says why. A splitmix32 finaliser
+ * over `seed` and the kind's salt is the whole requirement: same inputs, same face. `textSeedOf`
+ * is re-exported here because the report feed (PLAN M6.8) has always imported it from this file.
  *
  * **The criminal's seeded portrait is a spoiler** (DESIGN.md "Visual direction"). The profile is
  * derived from the seed, so a face derived from it would correlate with exactly what `HunterView`
  * hides. `REDACTED_AVATAR` is therefore a constant - no seed reaches it - and `dossier.tsx` is the
  * one place that decides which of the two the player is shown.
  */
+
+import { drawOf, streamBaseOf } from "./seedhash";
+
+export { textSeedOf } from "./seedhash";
 
 export const AVATAR_KINDS = ["criminal", "witness", "cctv", "tip", "patrol"] as const;
 
@@ -195,20 +197,6 @@ const REDACTED_TRAITS: AvatarTraits = {
   maskTone: 0,
 };
 
-const SPLITMIX32 = {
-  increment: 0x9e37_79b9,
-  firstShift: 16,
-  firstMultiplier: 0x21f0_aaad,
-  secondShift: 15,
-  secondMultiplier: 0x735a_2d97,
-  finalShift: 15,
-} as const;
-
-const FNV1A = {
-  offset: 0x811c_9dc5,
-  prime: 0x0100_0193,
-} as const;
-
 /** One draw per trait, in `AvatarTraits` order; the position is the stream index. */
 const TRAIT_DRAWS = {
   build: 1,
@@ -222,36 +210,11 @@ const TRAIT_DRAWS = {
   maskTone: 9,
 } as const;
 
-const mix32 = (value: number): number => {
-  const first = Math.imul(value ^ (value >>> SPLITMIX32.firstShift), SPLITMIX32.firstMultiplier);
-  const second = Math.imul(first ^ (first >>> SPLITMIX32.secondShift), SPLITMIX32.secondMultiplier);
-
-  return (second ^ (second >>> SPLITMIX32.finalShift)) >>> 0;
-};
-
-/**
- * FNV-1a over a string, as an unsigned 32-bit seed. Exported for the report feed (PLAN M6.8),
- * which seeds each source's face from the report's public id, never from the hunt's seed.
- */
-export const textSeedOf = (text: string): number => {
-  let hash: number = FNV1A.offset;
-  for (const character of text) {
-    hash = Math.imul(hash ^ (character.codePointAt(0) ?? 0), FNV1A.prime);
-  }
-
-  return hash >>> 0;
-};
-
-const saltOf = (kind: AvatarKind): number => textSeedOf(kind);
-
-const drawOf = (base: number, index: number): number =>
-  mix32((base + Math.imul(index, SPLITMIX32.increment)) >>> 0);
-
 const choose = <T>(choices: Choices<T>, draw: number): T =>
   choices[draw % choices.length] ?? choices[0];
 
 const traitsOf = (seed: number, kind: AvatarKind): AvatarTraits => {
-  const base = mix32((seed ^ saltOf(kind)) >>> 0);
+  const base = streamBaseOf(seed, kind);
   const wardrobe = WARDROBES[kind];
   const draw = (index: number): number => drawOf(base, index);
 

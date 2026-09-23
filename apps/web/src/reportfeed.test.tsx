@@ -4,7 +4,10 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { AVATAR_TEST_ID } from "./avatarportrait";
+import STYLESHEET from "./index.css?raw";
 import { LIMITS } from "./limits";
+import type { NodeFocus } from "./nodefocus";
+import type { PlaceNames } from "./placenames";
 import {
   ageText,
   REPORT_AGE_TEST_ID,
@@ -37,6 +40,13 @@ const DOWNTOWN = makeNodeId("n-downtown");
 const PARK = makeNodeId("n-park");
 
 const NOW = 5;
+
+const NAMES: PlaceNames = {
+  nodes: { [DOWNTOWN]: "Downtown - 5th Ave & Harbor St", [PARK]: "Park - 2nd Ave & Mill St" },
+  edges: {},
+  avenues: [],
+  streets: [],
+};
 
 const sighting = (nodeId: NodeId): ReportContent => ({
   kind: "sighting",
@@ -96,7 +106,7 @@ afterEach(async () => {
 
 describe("the report feed", () => {
   it("says so rather than showing nothing when no report has landed", async () => {
-    await render(<ReportFeed reports={[]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[]} currentTurn={NOW} />);
 
     expect(one(REPORT_FEED_TEST_ID)).not.toBeNull();
     expect(one(REPORT_FEED_EMPTY_TEST_ID)).not.toBeNull();
@@ -104,14 +114,14 @@ describe("the report feed", () => {
   });
 
   it("draws one line per report in the view", async () => {
-    await render(<ReportFeed reports={[OLD, LATE]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[OLD, LATE]} currentTurn={NOW} />);
 
     expect(all(REPORT_ENTRY_TEST_ID)).toHaveLength(2);
     expect(one(REPORT_FEED_EMPTY_TEST_ID)).toBeNull();
   });
 
   it("shows when a report was observed and when it arrived, distinguishably", async () => {
-    await render(<ReportFeed reports={[LATE]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[LATE]} currentTurn={NOW} />);
 
     expect(texts(REPORT_OBSERVED_TEST_ID)).toEqual(["Observed turn 2"]);
     expect(texts(REPORT_RECEIVED_TEST_ID)).toEqual(["Received turn 5"]);
@@ -120,13 +130,13 @@ describe("the report feed", () => {
   });
 
   it("highlights only the reports that landed this turn", async () => {
-    await render(<ReportFeed reports={[OLD, LATE]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[OLD, LATE]} currentTurn={NOW} />);
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-new")).toEqual(["true", "false"]);
   });
 
   it("stops highlighting a report once the turn has moved on", async () => {
-    await render(<ReportFeed reports={[LATE]} currentTurn={NOW + 1} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[LATE]} currentTurn={NOW + 1} />);
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-new")).toEqual(["false"]);
   });
@@ -134,7 +144,7 @@ describe("the report feed", () => {
   it("puts the newest arrival first, whatever order the view holds them in", async () => {
     const middle = report({ id: "report-middle", observedAtTurn: 1, receivedAtTurn: 3 });
 
-    await render(<ReportFeed reports={[OLD, LATE, middle]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[OLD, LATE, middle]} currentTurn={NOW} />);
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-reportid")).toEqual([
       "report-late",
@@ -147,7 +157,7 @@ describe("the report feed", () => {
     const first = report({ id: "report-first", observedAtTurn: 4, receivedAtTurn: NOW });
     const second = report({ id: "report-second", observedAtTurn: 3, receivedAtTurn: NOW });
 
-    await render(<ReportFeed reports={[first, second]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[first, second]} currentTurn={NOW} />);
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-reportid")).toEqual([
       "report-first",
@@ -170,17 +180,17 @@ describe("the report feed", () => {
       content: { kind: "no_sighting", nodeId: DOWNTOWN },
     });
 
-    await render(<ReportFeed reports={[seen, unseen]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[seen, unseen]} currentTurn={NOW} />);
 
     expect(texts(REPORT_CONTENT_TEST_ID)).toEqual([
-      "Sighting at n-park (unknown)",
-      "Nothing seen at n-downtown",
+      "Sighting at Park - 2nd Ave & Mill St (unknown)",
+      "Nothing seen at Downtown - 5th Ave & Harbor St",
     ]);
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-source")).toEqual(["cctv", "witness"]);
   });
 
   it("names no report by anything a HunterReport does not carry", async () => {
-    await render(<ReportFeed reports={[LATE, OLD]} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={[LATE, OLD]} currentTurn={NOW} />);
 
     const rendered = container?.textContent ?? "";
     for (const leak of ["prank", "planted", "true", "false", "accuracy"]) {
@@ -197,14 +207,14 @@ describe("the report feed's bound", () => {
   );
 
   it("draws every report of a feed exactly at the limit, and withholds none", async () => {
-    await render(<ReportFeed reports={overLimit.slice(1)} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={overLimit.slice(1)} currentTurn={NOW} />);
 
     expect(all(REPORT_ENTRY_TEST_ID)).toHaveLength(LIMITS.maxReportsInFeed);
     expect(one(REPORT_FEED_OVERFLOW_TEST_ID)).toBeNull();
   });
 
   it("keeps the most recent when given one report over the limit, and says how many it dropped", async () => {
-    await render(<ReportFeed reports={overLimit} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={overLimit} currentTurn={NOW} />);
 
     const entries = all(REPORT_ENTRY_TEST_ID);
     expect(entries).toHaveLength(LIMITS.maxReportsInFeed);
@@ -214,7 +224,9 @@ describe("the report feed's bound", () => {
   });
 
   it("holds a caller to a smaller cap than the limit when it asks for one", async () => {
-    await render(<ReportFeed reports={[OLD, LATE]} currentTurn={NOW} maxEntries={1} />);
+    await render(
+      <ReportFeed placeNames={NAMES} reports={[OLD, LATE]} currentTurn={NOW} maxEntries={1} />,
+    );
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-reportid")).toEqual(["report-late"]);
     expect(one(REPORT_FEED_OVERFLOW_TEST_ID)?.getAttribute("data-withheld")).toBe("1");
@@ -227,7 +239,7 @@ describe("the report feed's row chrome (PLAN M6.8)", () => {
   );
 
   it("badges each row with its source's weight from BALANCE", async () => {
-    await render(<ReportFeed reports={bySource} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={bySource} currentTurn={NOW} />);
 
     expect(attributes(REPORT_RELIABILITY_TEST_ID, "data-reliability")).toEqual([
       "high",
@@ -242,7 +254,12 @@ describe("the report feed's row chrome (PLAN M6.8)", () => {
     const weights = { cctv: 0.1, patrol: 0.1, witness: 0.1, tip: 0.8 };
 
     await render(
-      <ReportFeed reports={[bySource[3] ?? LATE]} currentTurn={NOW} sourceWeights={weights} />,
+      <ReportFeed
+        placeNames={NAMES}
+        reports={[bySource[3] ?? LATE]}
+        currentTurn={NOW}
+        sourceWeights={weights}
+      />,
     );
 
     expect(attributes(REPORT_RELIABILITY_TEST_ID, "data-reliability")).toEqual(["high"]);
@@ -262,7 +279,9 @@ describe("the report feed's row chrome (PLAN M6.8)", () => {
       receivedAtTurn: NOW - 2,
     });
 
-    await render(<ReportFeed reports={[fresh, aging, stale]} currentTurn={NOW} />);
+    await render(
+      <ReportFeed placeNames={NAMES} reports={[fresh, aging, stale]} currentTurn={NOW} />,
+    );
 
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-staleness")).toEqual(["fresh", "aging", "stale"]);
     expect(attributes(REPORT_ENTRY_TEST_ID, "data-age")).toEqual([
@@ -284,7 +303,7 @@ describe("the report feed's row chrome (PLAN M6.8)", () => {
   });
 
   it("draws one source face per row, and never the criminal's", async () => {
-    await render(<ReportFeed reports={bySource} currentTurn={NOW} />);
+    await render(<ReportFeed placeNames={NAMES} reports={bySource} currentTurn={NOW} />);
 
     expect(all(AVATAR_TEST_ID)).toHaveLength(bySource.length);
     expect(attributes(AVATAR_TEST_ID, "data-subject")).toEqual([
@@ -293,5 +312,91 @@ describe("the report feed's row chrome (PLAN M6.8)", () => {
       "witness",
       "tip",
     ]);
+  });
+});
+
+/** What a feed row asked the screen to focus, in order: a node, or `null` for "let go". */
+const focusRecorder = (nodeId: NodeId | null) => {
+  const calls: (NodeId | null)[] = [];
+  const focus: NodeFocus = { nodeId, onFocus: (next) => calls.push(next) };
+
+  return { focus, calls };
+};
+
+const pointerOn = async (element: Element, type: "pointerover" | "pointerout"): Promise<void> => {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+  });
+};
+
+const AT_PARK = report({
+  id: "report-park",
+  observedAtTurn: 4,
+  receivedAtTurn: 4,
+  content: { kind: "no_sighting", nodeId: PARK },
+});
+
+describe("the feed's side of the hover link (PLAN M7.2)", () => {
+  it("makes every row a tab stop that says which node it is about", async () => {
+    await render(<ReportFeed placeNames={NAMES} reports={[LATE, AT_PARK]} currentTurn={NOW} />);
+
+    expect(attributes(REPORT_ENTRY_TEST_ID, "tabindex")).toEqual(["0", "0"]);
+    expect(attributes(REPORT_ENTRY_TEST_ID, "data-nodeid")).toEqual([
+      String(DOWNTOWN),
+      String(PARK),
+    ]);
+  });
+
+  it("focuses a row's node while the pointer is on it, and lets go when it leaves", async () => {
+    const { focus, calls } = focusRecorder(null);
+    await render(
+      <ReportFeed placeNames={NAMES} reports={[LATE, AT_PARK]} currentTurn={NOW} focus={focus} />,
+    );
+    const park = all(REPORT_ENTRY_TEST_ID)[1] as Element;
+
+    await pointerOn(park, "pointerover");
+    await pointerOn(park, "pointerout");
+
+    expect(calls).toEqual([PARK, null]);
+  });
+
+  it("focuses a row's node while it has keyboard focus, and lets go on blur", async () => {
+    const { focus, calls } = focusRecorder(null);
+    await render(
+      <ReportFeed placeNames={NAMES} reports={[LATE, AT_PARK]} currentTurn={NOW} focus={focus} />,
+    );
+    const late = all(REPORT_ENTRY_TEST_ID)[0] as HTMLElement;
+
+    await act(async () => late.focus());
+    await act(async () => late.blur());
+
+    expect(calls).toEqual([DOWNTOWN, null]);
+  });
+
+  it("links exactly the rows at the focused node", async () => {
+    const { focus } = focusRecorder(DOWNTOWN);
+
+    await render(
+      <ReportFeed
+        placeNames={NAMES}
+        reports={[OLD, LATE, AT_PARK]}
+        currentTurn={NOW}
+        focus={focus}
+      />,
+    );
+
+    expect(attributes(REPORT_ENTRY_TEST_ID, "data-linked")).toEqual(["true", "false", "true"]);
+  });
+
+  it("links nothing when it was given no focus to follow", async () => {
+    await render(<ReportFeed placeNames={NAMES} reports={[LATE, AT_PARK]} currentTurn={NOW} />);
+
+    expect(attributes(REPORT_ENTRY_TEST_ID, "data-linked")).toEqual(["false", "false"]);
+  });
+
+  it("gives a linked row the instrument cyan edge", () => {
+    expect(STYLESHEET).toMatch(
+      /\.mh-feed__row\[data-linked="true"\]\s*\{[^}]*border-left-color:\s*var\(--mh-color-accent\)/,
+    );
   });
 });

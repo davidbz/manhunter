@@ -33,6 +33,8 @@ import {
 import { AvatarPortrait } from "./avatarportrait";
 import { type FeedRow, type FeedRowTheme, feedRowOf, type SourceWeights } from "./feedrow";
 import { LIMITS } from "./limits";
+import { type NodeFocus, optionalNodeFocusHandlersOf } from "./nodefocus";
+import { nodeNameOf, type PlaceNames } from "./placenames";
 import { AVATAR_THEME, FEED_ROW_THEME } from "./theme";
 
 export type ReportFeedProps = {
@@ -49,6 +51,13 @@ export type ReportFeedProps = {
    * balance, the way `MapRenderer`'s `daylight` does; `ReportFeedPanel` passes the store's.
    */
   readonly sourceWeights?: SourceWeights;
+  /** What each place is called (PLAN M7.1). A row names its node by this, never by its id. */
+  readonly placeNames: PlaceNames;
+  /**
+   * The screen's focused node (PLAN M7.2). Pointing at or focusing a row puts its node in focus,
+   * and a row at the focused node is marked `data-linked`. Absent, the feed links nothing.
+   */
+  readonly focus?: NodeFocus | undefined;
   readonly theme?: FeedRowTheme;
 };
 
@@ -156,8 +165,8 @@ const contentLineOf = (content: ReportContent): ContentLine => {
   }
 };
 
-const contentTextOf = (line: ContentLine): string => {
-  const placed = `${line.label}${AT_SEPARATOR}${line.nodeId}`;
+const contentTextOf = (line: ContentLine, names: PlaceNames): string => {
+  const placed = `${line.label}${AT_SEPARATOR}${nodeNameOf(names, line.nodeId)}`;
   if (line.travelMode === null) return placed;
 
   return `${placed}${MODE_OPEN}${line.travelMode}${MODE_CLOSE}`;
@@ -183,59 +192,72 @@ const ReliabilityBadge = ({ row }: { readonly row: FeedRow }) => (
   </abbr>
 );
 
-const ReportEntry = ({
-  report,
-  row,
-  isNew,
-}: {
+/** A row is a stop in the tab order so a keyboard player can follow it to the map (PLAN M7.2). */
+const ROW_TAB_INDEX = 0;
+
+type ReportEntryProps = {
   readonly report: HunterReport;
   readonly row: FeedRow;
   readonly isNew: boolean;
-}) => (
-  <li
-    className="mh-feed__row"
-    data-testid={REPORT_ENTRY_TEST_ID}
-    data-reportid={report.id}
-    data-source={report.source}
-    data-observed={report.observedAtTurn}
-    data-received={report.receivedAtTurn}
-    data-new={isNew}
-    data-age={row.age}
-    data-staleness={row.staleness}
-  >
-    <AvatarPortrait
-      avatar={row.avatar}
-      label={`${REPORT_SOURCE_LABELS[report.source]}${AVATAR_LABEL_SUFFIX}`}
-      size={AVATAR_THEME.thumbnailSize}
-    />
-    <div className="mh-feed__body">
-      <div className="mh-feed__head">
-        <span className="mh-feed__source">{REPORT_SOURCE_LABELS[report.source]}</span>
-        <ReliabilityBadge row={row} />
-        <span className="mh-feed__age" data-testid={REPORT_AGE_TEST_ID}>
-          {ageText(row.age)}
+  readonly names: PlaceNames;
+  readonly focus: NodeFocus | undefined;
+};
+
+const ReportEntry = ({ report, row, isNew, names, focus }: ReportEntryProps) => {
+  const line = contentLineOf(report.content);
+
+  return (
+    <li
+      className="mh-feed__row"
+      tabIndex={ROW_TAB_INDEX}
+      {...optionalNodeFocusHandlersOf(line.nodeId, focus?.onFocus)}
+      data-testid={REPORT_ENTRY_TEST_ID}
+      data-reportid={report.id}
+      data-source={report.source}
+      data-observed={report.observedAtTurn}
+      data-received={report.receivedAtTurn}
+      data-new={isNew}
+      data-age={row.age}
+      data-staleness={row.staleness}
+      data-nodeid={line.nodeId}
+      data-linked={focus !== undefined && focus.nodeId === line.nodeId}
+    >
+      <AvatarPortrait
+        avatar={row.avatar}
+        label={`${REPORT_SOURCE_LABELS[report.source]}${AVATAR_LABEL_SUFFIX}`}
+        size={AVATAR_THEME.thumbnailSize}
+      />
+      <div className="mh-feed__body">
+        <div className="mh-feed__head">
+          <span className="mh-feed__source">{REPORT_SOURCE_LABELS[report.source]}</span>
+          <ReliabilityBadge row={row} />
+          <span className="mh-feed__age" data-testid={REPORT_AGE_TEST_ID}>
+            {ageText(row.age)}
+          </span>
+        </div>
+        <span className="mh-feed__content" data-testid={REPORT_CONTENT_TEST_ID}>
+          {contentTextOf(line, names)}
         </span>
+        <div className="mh-feed__times">
+          <span data-testid={REPORT_OBSERVED_TEST_ID}>
+            {`${OBSERVED_PREFIX}${report.observedAtTurn}`}
+          </span>
+          <span data-testid={REPORT_RECEIVED_TEST_ID}>
+            {`${RECEIVED_PREFIX}${report.receivedAtTurn}`}
+          </span>
+        </div>
       </div>
-      <span className="mh-feed__content" data-testid={REPORT_CONTENT_TEST_ID}>
-        {contentTextOf(contentLineOf(report.content))}
-      </span>
-      <div className="mh-feed__times">
-        <span data-testid={REPORT_OBSERVED_TEST_ID}>
-          {`${OBSERVED_PREFIX}${report.observedAtTurn}`}
-        </span>
-        <span data-testid={REPORT_RECEIVED_TEST_ID}>
-          {`${RECEIVED_PREFIX}${report.receivedAtTurn}`}
-        </span>
-      </div>
-    </div>
-  </li>
-);
+    </li>
+  );
+};
 
 export const ReportFeed = ({
   reports,
   currentTurn,
   maxEntries = LIMITS.maxReportsInFeed,
   sourceWeights = BALANCE.belief.sourceWeight,
+  placeNames,
+  focus,
   theme = FEED_ROW_THEME,
 }: ReportFeedProps) => {
   const page = reportPageOf(reports, maxEntries);
@@ -255,6 +277,8 @@ export const ReportFeed = ({
               report={report}
               row={feedRowOf(report, currentTurn, sourceWeights, theme)}
               isNew={report.receivedAtTurn === currentTurn}
+              names={placeNames}
+              focus={focus}
             />
           ))}
         </ol>

@@ -9,6 +9,12 @@
  * sighting carries a filled red dot (a claim about the criminal, DESIGN.md's red), a clearance a
  * muted bar - so the distinction survives a reader who cannot separate the hues.
  *
+ * **A pin is also a handle on the hover link (PLAN M7.2).** Given `onFocusNode`, each pin takes
+ * pointer events on its painted shape alone (`visiblePainted`, overriding the layer's `none`), so
+ * pointing at it puts its node in focus. The pin stands above the pip, never on it, so the node's
+ * own click is still not swallowed; the stretch of road the pin covers is. Without the handler, as
+ * on the debrief's replay map, the pin stays inert.
+ *
  * Age is drawn by the stylesheet, keyed on `data-staleness` (the feed's own tiers), so the fade is
  * a token rather than a number here.
  */
@@ -17,6 +23,7 @@ import type { NodeId, Position, Turn } from "@manhunter/core";
 import type { FeedRowTheme } from "./feedrow";
 import { glyphTransformOf } from "./mapactors";
 import { MIDPOINT_FRACTION } from "./mapgeometry";
+import { type NodeFocusHandler, optionalNodeFocusHandlersOf } from "./nodefocus";
 import type { ReportPin, ReportPinKind, ReportPinSet } from "./reportpins";
 
 /** How one kind of pin is drawn. `mark` is path data on the glyph box, filled or stroked. */
@@ -53,6 +60,7 @@ export const MAP_REPORT_PIN_TEST_ID = "map-report-pin";
 export const REPORT_PIN_CLASS = "mh-map-pin";
 
 const NO_POINTER_EVENTS = "none";
+const PAINTED_POINTER_EVENTS = "visiblePainted";
 const ROUND = "round";
 const NO_INSET = 0;
 
@@ -98,11 +106,14 @@ type MapReportPinProps = {
   readonly arrived: boolean;
   readonly position: Position;
   readonly style: MapReportPinStyle;
+  readonly onFocusNode: NodeFocusHandler | undefined;
 };
 
-const MapReportPin = ({ pin, arrived, position, style }: MapReportPinProps) => (
+const MapReportPin = ({ pin, arrived, position, style, onFocusNode }: MapReportPinProps) => (
   <g
     className={REPORT_PIN_CLASS}
+    style={onFocusNode === undefined ? undefined : { pointerEvents: PAINTED_POINTER_EVENTS }}
+    {...optionalNodeFocusHandlersOf(pin.nodeId, onFocusNode)}
     data-testid={MAP_REPORT_PIN_TEST_ID}
     data-nodeid={pin.nodeId}
     data-kind={pin.kind}
@@ -132,6 +143,8 @@ type MapReportPinsProps = {
   readonly currentTurn: Turn;
   readonly positions: ReadonlyMap<NodeId, Position>;
   readonly style: MapReportPinStyle;
+  /** Pointing at a pin puts its node in focus (PLAN M7.2). Absent, the pins are inert. */
+  readonly onFocusNode?: NodeFocusHandler | undefined;
 };
 
 /** Omitted when nothing recent has been reported, the way the incident layer is. */
@@ -146,6 +159,7 @@ export const MapReportPins = ({
   currentTurn,
   positions,
   style,
+  onFocusNode,
 }: MapReportPinsProps) => {
   if (pinSet.pins.length === 0) return null;
 
@@ -168,6 +182,7 @@ export const MapReportPins = ({
             arrived={heard === currentTurn}
             position={position}
             style={style}
+            onFocusNode={onFocusNode}
           />,
         ];
       })}

@@ -201,6 +201,15 @@ h3 {
   font-weight: var(--mh-font-weight-bold);
 }
 
+/* Money is gold and the player's own standing cyan (DESIGN.md "Hue discipline", PLAN M7.4). */
+.mh-rail__item[data-rail="budget"] .mh-rail__value {
+  color: var(--mh-color-exit-gold);
+}
+
+.mh-rail__item[data-rail="trust"] .mh-rail__value {
+  color: var(--mh-color-accent);
+}
+
 /*
  * Panel chrome (PLAN M6.8). Every intel and command panel is a card: a raised plane with a
  * hairline top edge and a small uppercase title, never a box with a border (DESIGN.md "Ground").
@@ -379,8 +388,25 @@ h3 {
   text-align: right;
 }
 
-.mh-meter__bar {
+/*
+ * The track holds the bar and the plan's forecast over it (PLAN M7.4), and carries the segment
+ * mask so that both are cut by the same gaps.
+ */
+.mh-meter__track {
   grid-column: 1 / -1;
+  position: relative;
+  display: block;
+  height: var(--mh-meter-height);
+  mask-image: repeating-linear-gradient(
+    to right,
+    var(--mh-color-mask-ink) 0,
+    var(--mh-color-mask-ink) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
+    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
+    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments))
+  );
+}
+
+.mh-meter__bar {
   display: block;
   width: 100%;
   height: var(--mh-meter-height);
@@ -388,12 +414,38 @@ h3 {
   background: var(--mh-color-surface-sunken);
   border: 0;
   border-radius: var(--mh-radius-none);
-  mask-image: repeating-linear-gradient(
-    to right,
-    var(--mh-color-mask-ink) 0,
-    var(--mh-color-mask-ink) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
-    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments) - var(--mh-meter-segment-gap)),
-    var(--mh-color-mask-clear) calc(100% / var(--mh-meter-segments))
+}
+
+/*
+ * The forecast: what the plan spends is struck through with the track's own dark, so the fill
+ * reads as going; what it gains is hatched in the instrument's cyan over the empty track.
+ */
+.mh-meter__forecast {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--mh-meter-forecast-from) * 100%);
+  width: calc((var(--mh-meter-forecast-to) - var(--mh-meter-forecast-from)) * 100%);
+  pointer-events: none;
+}
+
+.mh-meter__forecast[data-direction="spend"] {
+  background: repeating-linear-gradient(
+    var(--mh-meter-forecast-hatch-angle),
+    var(--mh-color-surface-sunken) 0,
+    var(--mh-color-surface-sunken) var(--mh-meter-forecast-hatch-stripe),
+    var(--mh-color-mask-clear) var(--mh-meter-forecast-hatch-stripe),
+    var(--mh-color-mask-clear) var(--mh-meter-forecast-hatch-pitch)
+  );
+}
+
+.mh-meter__forecast[data-direction="gain"] {
+  background: repeating-linear-gradient(
+    var(--mh-meter-forecast-hatch-angle),
+    var(--mh-color-accent) 0,
+    var(--mh-color-accent) var(--mh-meter-forecast-hatch-stripe),
+    var(--mh-color-mask-clear) var(--mh-meter-forecast-hatch-stripe),
+    var(--mh-color-mask-clear) var(--mh-meter-forecast-hatch-pitch)
   );
 }
 
@@ -463,6 +515,17 @@ h3 {
 .mh-feed__row[data-new="true"] {
   background: var(--mh-color-surface-raised);
   border-left-color: var(--mh-color-accent);
+}
+
+/*
+ * The hover link (PLAN M7.2): a row at the node in focus takes the instrument cyan edge and lifts,
+ * whichever surface put the node there. The cyan inset closes the edge round the row, so a linked
+ * row reads apart from a new one, whose left edge is already cyan.
+ */
+.mh-feed__row[data-linked="true"] {
+  background: var(--mh-color-surface-overlay);
+  border-left-color: var(--mh-color-accent);
+  box-shadow: inset 0 0 0 var(--mh-border-hairline) var(--mh-color-accent);
 }
 
 .mh-feed__row[data-staleness="aging"] {
@@ -566,11 +629,11 @@ h3 {
 .mh-tile {
   flex: 1;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "icon label"
-    "cost cost"
-    "status status";
+    "icon label key"
+    "cost cost cost"
+    "status status status";
   align-items: center;
   gap: var(--mh-space-xs) var(--mh-space-sm);
   padding: var(--mh-space-sm);
@@ -618,6 +681,26 @@ h3 {
   text-transform: uppercase;
 }
 
+/* The key that arms the tile (PLAN M7.3), drawn as a keycap in the tile's corner. */
+.mh-tile__key {
+  grid-area: key;
+  min-width: var(--mh-space-md);
+  padding: 0 var(--mh-space-xs);
+  color: var(--mh-color-text-muted);
+  background: var(--mh-color-surface-sunken);
+  border: var(--mh-border-hairline) solid var(--mh-color-edge-strong);
+  border-bottom-width: var(--mh-border-heavy);
+  border-radius: var(--mh-radius-chip);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-xs);
+  text-align: center;
+}
+
+.mh-tile[aria-pressed="true"] > .mh-tile__key {
+  color: var(--mh-color-accent);
+  border-color: var(--mh-color-accent);
+}
+
 .mh-tile__cost {
   grid-area: cost;
   display: flex;
@@ -646,6 +729,10 @@ h3 {
 
 .mh-chip[data-chip="budget"] {
   color: var(--mh-color-exit-gold);
+}
+
+.mh-chip[data-chip="trust"] {
+  color: var(--mh-color-accent);
 }
 
 .mh-chip[data-short="true"] {
@@ -690,6 +777,31 @@ h3 {
   font-size: var(--mh-font-size-xs);
 }
 
+/* The plan in action points (PLAN M7.4): a pip per point held, filled cyan where the plan spends. */
+.mh-order__ap {
+  display: flex;
+  align-items: center;
+  gap: var(--mh-space-sm);
+  color: var(--mh-color-text);
+  font-family: var(--mh-font-family);
+  font-size: var(--mh-font-size-xs);
+}
+
+.mh-order__pips {
+  display: flex;
+  gap: var(--mh-space-xs);
+}
+
+.mh-order__pip {
+  width: var(--mh-meter-pip-size);
+  height: var(--mh-meter-pip-size);
+  border: var(--mh-border-hairline) solid var(--mh-color-accent);
+}
+
+.mh-order__pip[data-filled="true"] {
+  background: var(--mh-color-accent);
+}
+
 .mh-order > .mh-order__lines {
   flex: 1 1 auto;
   min-height: 0;
@@ -699,7 +811,12 @@ h3 {
   list-style: none;
 }
 
+/*
+ * A whole line removes its order (PLAN M7.3): the Remove button's hit area is stretched over the
+ * line, so the line has one control, reachable by keyboard, and a click anywhere on it lands there.
+ */
 .mh-order__line {
+  position: relative;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
@@ -710,12 +827,26 @@ h3 {
   font-size: var(--mh-font-size-small);
 }
 
+.mh-order__line:hover {
+  background: var(--mh-color-surface-sunken);
+}
+
+.mh-order__remove::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
 .mh-order__number {
   color: var(--mh-color-text-dim);
 }
 
 .mh-order__summary {
   overflow-wrap: anywhere;
+}
+
+.mh-order__line:hover > .mh-order__summary {
+  text-decoration: line-through;
 }
 
 .mh-order > .mh-button--commit {
@@ -771,7 +902,8 @@ h3 {
   cursor: default;
 }
 
-.mh-map-reticle {
+.mh-map-reticle,
+.mh-map-beacon__ring {
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -790,6 +922,11 @@ h3 {
 }
 
 /* A report pin fades through the feed's own age tiers (PLAN M6.6); a fresh pin is at full strength. */
+/* A planned order's badge removes it on click (PLAN M7.3). */
+.mh-map-plan__order {
+  cursor: pointer;
+}
+
 .mh-map-pin[data-staleness="aging"] {
   opacity: var(--mh-fade-aging);
 }
@@ -1173,9 +1310,9 @@ h3 {
  * unstoppable one. `tools/theme/reducedmotion.test.ts` (PLAN M6.10) fails if an animation, a
  * transition or a keyframes rule appears anywhere outside such a block.
  *
- * The five moments that move (PLAN M6.10, `MOTION` in `theme.ts`) all replay by remounting: the
- * component keys the element by what it shows, so a new reading is a new element and its
- * animation runs once, on arrival, and never loops. Every travel is toward the negative side
+ * The five moments that move (PLAN M6.10, `MOTION` in `theme.ts`), and M7.2's focus pulse, all
+ * replay by remounting: the component keys the element by what it shows, so a new reading is a
+ * new element and its animation runs once, on arrival, and never loops. Every travel is toward the negative side
  * (up, or from the left), where overflow is clipped rather than scrollable, so no region grows a
  * scrollbar for the length of an animation.
  */
@@ -1193,6 +1330,18 @@ h3 {
   }
 
   @keyframes mh-map-lock-on {
+    from {
+      opacity: 0;
+      transform: scale(var(--mh-motion-lock-on-scale));
+    }
+  }
+
+  /* Focus pulse (PLAN M7.2): the beacon's ring closes on the node it found, once per focus. */
+  .mh-map-beacon__ring {
+    animation: mh-map-beacon-pulse var(--mh-motion-focus-pulse) var(--mh-motion-ease-out);
+  }
+
+  @keyframes mh-map-beacon-pulse {
     from {
       opacity: 0;
       transform: scale(var(--mh-motion-lock-on-scale));

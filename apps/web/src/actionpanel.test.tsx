@@ -1,10 +1,4 @@
-import {
-  actionCostOf,
-  BALANCE,
-  type HunterActionKind,
-  makeEdgeId,
-  targetKindOf,
-} from "@manhunter/core";
+import { BALANCE, type HunterActionKind, makeEdgeId, targetKindOf } from "@manhunter/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,6 +8,7 @@ import {
   ACTION_COST_CHIP_TEST_ID,
   ACTION_COST_TEST_ID,
   ACTION_DRAFT_TEST_ID,
+  ACTION_KEYCAP_TEST_ID,
   ACTION_KINDS,
   ACTION_OPTION_TEST_ID,
   ACTION_PANEL_TEST_ID,
@@ -21,11 +16,15 @@ import {
   ACTION_UNAFFORDABLE_TEST_ID,
   ActionPanel,
   type ActionPanelProps,
+  actionKeyOf,
+  actionKindOfKey,
   actionOptionsOf,
   COST_CHIP_KINDS,
   costChipsOf,
   costLabel,
 } from "./actionpanel";
+import type { PlaceNames } from "./placenames";
+import { planCostOf } from "./plancost";
 
 /**
  * The presentational half of PLAN M5.5a. Nothing here touches a store: the board is a pure
@@ -40,6 +39,13 @@ const BROKE = { actionPoints: 0, budget: 0 };
 
 const EDGE_TARGET: ActionTarget = { kind: "edge", edgeId: makeEdgeId("e-1-2-h") };
 
+const NAMES: PlaceNames = {
+  nodes: {},
+  edges: { "e-1-2-h": "Harbor St" },
+  avenues: [],
+  streets: [],
+};
+
 let root: Root | null = null;
 let container: HTMLElement | null = null;
 
@@ -51,6 +57,7 @@ const defaultProps: ActionPanelProps = {
   onArm: (kind) => armedKinds.push(kind),
   target: null,
   draft: null,
+  placeNames: NAMES,
 };
 
 const render = async (props: Partial<ActionPanelProps> = {}): Promise<void> => {
@@ -82,7 +89,7 @@ afterEach(async () => {
 describe("the action options", () => {
   it("prices every MVP action from core, never from a literal here", () => {
     for (const option of actionOptionsOf(BALANCE, RICH)) {
-      expect(option.cost).toEqual(actionCostOf(option.kind, BALANCE));
+      expect(option.cost).toEqual(planCostOf(option.kind, BALANCE));
       expect(option.targetKind).toBe(targetKindOf(option.kind));
     }
   });
@@ -101,7 +108,7 @@ describe("the action options", () => {
   });
 
   it("refuses an action the budget alone cannot cover", () => {
-    const cost = actionCostOf("roadblock", BALANCE);
+    const cost = planCostOf("roadblock", BALANCE);
     const options = actionOptionsOf(BALANCE, {
       actionPoints: cost.actionPoints,
       budget: cost.budget - 1,
@@ -121,7 +128,7 @@ describe("the action panel", () => {
     );
     expect(
       optionFor("roadblock")?.querySelector(`[data-testid="${ACTION_COST_TEST_ID}"]`)?.textContent,
-    ).toBe(costLabel(actionCostOf("roadblock", BALANCE)));
+    ).toBe(costLabel(planCostOf("roadblock", BALANCE)));
   });
 
   it("reports the target kind core names, so the map can be narrowed by it", async () => {
@@ -178,7 +185,8 @@ describe("the action panel", () => {
     });
 
     expect(draftLine()?.getAttribute("data-ready")).toBe("true");
-    expect(draftLine()?.textContent).toContain("e-1-2-h");
+    expect(draftLine()?.textContent).toContain("Harbor St");
+    expect(draftLine()?.textContent).not.toContain("e-1-2-h");
   });
 
   it("reads as ready the moment a global action is armed", async () => {
@@ -199,7 +207,7 @@ describe("the action tiles (PLAN M6.8)", () => {
     ) ?? null;
 
   it("splits the price into one chip per resource that still reads as the cost label", () => {
-    const cost = actionCostOf("roadblock", BALANCE);
+    const cost = planCostOf("roadblock", BALANCE);
 
     expect(costChipsOf(cost).map((chip) => chip.kind)).toEqual(COST_CHIP_KINDS);
     expect(
@@ -219,7 +227,7 @@ describe("the action tiles (PLAN M6.8)", () => {
   });
 
   it("marks only the resource that falls short", async () => {
-    const cost = actionCostOf("roadblock", BALANCE);
+    const cost = planCostOf("roadblock", BALANCE);
     await render({
       options: actionOptionsOf(BALANCE, {
         actionPoints: cost.actionPoints,
@@ -245,5 +253,52 @@ describe("the action tiles (PLAN M6.8)", () => {
     await render();
 
     expect(container?.querySelector(`[data-testid="${ACTION_UNAFFORDABLE_TEST_ID}"]`)).toBeNull();
+  });
+});
+
+describe("the trust chip (PLAN M7.3)", () => {
+  const trustChipOf = (kind: HunterActionKind): Element | null =>
+    optionFor(kind)?.querySelector(
+      `[data-testid="${ACTION_COST_CHIP_TEST_ID}"][data-chip="trust"]`,
+    ) ?? null;
+
+  it("signs trust the way core moves it: spent is negative, gained is positive", () => {
+    const trustText = (kind: HunterActionKind): string | undefined =>
+      costChipsOf(planCostOf(kind, BALANCE)).find((chip) => chip.kind === "trust")?.text;
+
+    expect(trustText("roadblock")).toBe(`-${BALANCE.actions.roadblock.trustCost} trust`);
+    expect(trustText("true_briefing")).toBe(`+${BALANCE.actions.trueBriefing.trustGain} trust`);
+    expect(trustText("pull_cctv")).toBe("0 trust");
+  });
+
+  it("never marks trust short, because core clamps it rather than refusing", async () => {
+    await render({ options: actionOptionsOf(BALANCE, BROKE) });
+
+    for (const kind of ACTION_KINDS) {
+      expect(trustChipOf(kind)?.getAttribute("data-short")).toBe("false");
+    }
+  });
+});
+
+describe("the tile keys (PLAN M7.3)", () => {
+  it("numbers the tiles 1 to 4 in board order, and reads the keys back", () => {
+    ACTION_KINDS.forEach((kind, index) => {
+      expect(actionKindOfKey(actionKeyOf(index))).toBe(kind);
+    });
+    expect(actionKeyOf(0)).toBe("1");
+    expect(actionKindOfKey("5")).toBeNull();
+    expect(actionKindOfKey("a")).toBeNull();
+  });
+
+  it("shows each tile's key as a keycap, and declares it as the tile's shortcut", async () => {
+    await render();
+
+    ACTION_KINDS.forEach((kind, index) => {
+      const tile = optionFor(kind);
+      const keycap = tile?.querySelector(`[data-testid="${ACTION_KEYCAP_TEST_ID}"]`);
+      expect(keycap?.textContent).toBe(actionKeyOf(index));
+      expect(keycap?.getAttribute("aria-hidden")).toBe("true");
+      expect(tile?.getAttribute("aria-keyshortcuts")).toBe(actionKeyOf(index));
+    });
   });
 });
