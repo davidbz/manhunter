@@ -19,12 +19,17 @@
  * a chip the hunter cannot cover is marked `data-short`, so an unaffordable tile says *which*
  * meter is the problem, and the tile adds a visible "cannot afford" line rather than relying on
  * the dimming alone.
+ *
+ * **The board prices the plan, not the purse (PLAN M7.3).** The screen hands `actionOptionsOf`
+ * what `remainingAfter` says the queued plan leaves, so a tile goes dark the moment the plan has
+ * spent what it needs, before the player tries it. Tiles carry a third chip, trust, signed the way
+ * `planCostOf` signs it; trust is clamped by `core` and never refused, so its chip is never
+ * `data-short`. Each tile shows the key that arms it (`actionKeyOf`, 1 to 4 in board order), and
+ * the screen listens for the same keys through `actionKindOfKey`.
  */
 
 import {
-  type ActionCost,
   type ActionTargetKind,
-  actionCostOf,
   type Balance,
   type HunterAction,
   type HunterActionKind,
@@ -32,6 +37,8 @@ import {
 } from "@manhunter/core";
 import type { ActionTarget } from "./actiondraft";
 import { ActionIcon } from "./actionicon";
+import { edgeNameOf, nodeNameOf, type PlaceNames } from "./placenames";
+import { type PlanCost, planCostOf } from "./plancost";
 
 /** The part of `HunterState` an action is billed against, named the way `MeterBounds` is. */
 export type ActionResources = {
@@ -69,8 +76,8 @@ export const ACTION_TARGET_PROMPTS: Readonly<Record<ActionTargetKind, string>> =
   global: "No target needed",
 };
 
-/** The two resources an action is billed in, one chip each on its tile. */
-export const COST_CHIP_KINDS = ["action_points", "budget"] as const;
+/** The three meters an action moves, one chip each on its tile. */
+export const COST_CHIP_KINDS = ["action_points", "budget", "trust"] as const;
 
 export type CostChipKind = (typeof COST_CHIP_KINDS)[number];
 
@@ -79,9 +86,9 @@ export type ActionOption = {
   readonly kind: HunterActionKind;
   readonly label: string;
   readonly targetKind: ActionTargetKind;
-  readonly cost: ActionCost;
+  readonly cost: PlanCost;
   readonly affordable: boolean;
-  /** Which of the two resources falls short of the price; both `false` exactly when affordable. */
+  /** Which meter falls short of the price; all `false` exactly when affordable. Trust never is. */
   readonly short: Readonly<Record<CostChipKind, boolean>>;
 };
 
@@ -100,6 +107,8 @@ export type ActionPanelProps = {
    * queue takes exactly this value, and it is `null` for as long as there is nothing to queue.
    */
   readonly draft: HunterAction | null;
+  /** What each place is called (PLAN M7.1). The ready line names its target by this. */
+  readonly placeNames: PlaceNames;
 };
 
 export const ACTION_PANEL_TEST_ID = "action-panel";
@@ -108,43 +117,65 @@ export const ACTION_COST_TEST_ID = "action-cost";
 export const ACTION_DRAFT_TEST_ID = "action-draft";
 export const ACTION_COST_CHIP_TEST_ID = "action-cost-chip";
 export const ACTION_UNAFFORDABLE_TEST_ID = "action-unaffordable";
+export const ACTION_KEYCAP_TEST_ID = "action-keycap";
 
 const ACTIONS_LABEL = "Actions";
+/** The keycap is announced once, as the tile's `aria-keyshortcuts`, not again as its text. */
+const ARIA_HIDDEN = true;
 const ACTIONS_TITLE = "Action board";
 const UNAFFORDABLE_TEXT = "Cannot afford";
 const COST_SEPARATOR = ", ";
 const ACTION_POINT_SUFFIX = " AP";
 const BUDGET_SUFFIX = " budget";
+const TRUST_SUFFIX = " trust";
+const GAIN_SIGN = "+";
+const NO_SIGN = "";
 const CHOOSE_PROMPT = "Choose an action";
 const READY_PREFIX = "Ready: ";
 const READY_SEPARATOR = " - ";
 /** Exported because PLAN M5.5b's queue names the same target, and the city has one name here. */
 export const GLOBAL_TARGET_LABEL = "the whole city";
 
-export const costChipsOf = (cost: ActionCost): readonly CostChip[] => [
+/** A signed change reads with its sign, so a gain is never mistaken for a price. */
+const signedText = (change: number): string => `${change > 0 ? GAIN_SIGN : NO_SIGN}${change}`;
+
+export const costChipsOf = (cost: PlanCost): readonly CostChip[] => [
   { kind: "action_points", text: `${cost.actionPoints}${ACTION_POINT_SUFFIX}` },
   { kind: "budget", text: `${cost.budget}${BUDGET_SUFFIX}` },
+  { kind: "trust", text: `${signedText(cost.trust)}${TRUST_SUFFIX}` },
 ];
 
-export const costLabel = (cost: ActionCost): string =>
+export const costLabel = (cost: PlanCost): string =>
   costChipsOf(cost)
     .map((chip) => chip.text)
     .join(COST_SEPARATOR);
 
 /**
+ * The key that arms the tile at `index`: the board's order, counted from one, so the keys read
+ * left to right the way the tiles do.
+ */
+export const actionKeyOf = (index: number): string => String(index + 1);
+
+/** The action a key arms, or `null` for a key no tile answers to. */
+export const actionKindOfKey = (key: string): HunterActionKind | null =>
+  ACTION_KINDS.find((_, index) => actionKeyOf(index) === key) ?? null;
+
+/**
  * Every action, priced from `core`. The affordability test is the same pair of comparisons
  * `core`'s `validate` makes, against the meters the view carries rather than the world it cannot
- * see, which is why `actionCostOf` exists (its own note).
+ * see, which is why `actionCostOf` exists (its own note). The dispatch screen passes what the
+ * queued plan leaves (`remainingAfter`), not what the hunter holds.
  */
 export const actionOptionsOf = (
   balance: Balance,
   resources: ActionResources,
 ): readonly ActionOption[] =>
   ACTION_KINDS.map((kind) => {
-    const cost = actionCostOf(kind, balance);
+    const cost = planCostOf(kind, balance);
     const short = {
       action_points: cost.actionPoints > resources.actionPoints,
       budget: cost.budget > resources.budget,
+      trust: false,
     };
 
     return {
@@ -157,9 +188,9 @@ export const actionOptionsOf = (
     };
   });
 
-const targetLabel = (target: ActionTarget): string => {
-  if ("edgeId" in target) return target.edgeId;
-  if ("nodeId" in target) return target.nodeId;
+const targetLabel = (target: ActionTarget, names: PlaceNames): string => {
+  if ("edgeId" in target) return edgeNameOf(names, target.edgeId);
+  if ("nodeId" in target) return nodeNameOf(names, target.nodeId);
 
   return GLOBAL_TARGET_LABEL;
 };
@@ -171,7 +202,7 @@ export const draftMessage = (props: ActionPanelProps): string => {
   if (props.draft === null || props.target === null)
     return ACTION_TARGET_PROMPTS[option.targetKind];
 
-  return `${READY_PREFIX}${option.label}${READY_SEPARATOR}${targetLabel(props.target)}`;
+  return `${READY_PREFIX}${option.label}${READY_SEPARATOR}${targetLabel(props.target, props.placeNames)}`;
 };
 
 /**
@@ -198,10 +229,12 @@ const CostChips = ({ option }: { readonly option: ActionOption }) => (
 
 const ActionOptionButton = ({
   option,
+  keycap,
   armed,
   onArm,
 }: {
   readonly option: ActionOption;
+  readonly keycap: string;
   readonly armed: boolean;
   readonly onArm: (kind: HunterActionKind) => void;
 }) => (
@@ -216,8 +249,12 @@ const ActionOptionButton = ({
       data-target={option.targetKind}
       data-affordable={option.affordable}
       data-armed={armed}
+      aria-keyshortcuts={keycap}
       onClick={() => onArm(option.kind)}
     >
+      <kbd className="mh-tile__key" data-testid={ACTION_KEYCAP_TEST_ID} aria-hidden={ARIA_HIDDEN}>
+        {keycap}
+      </kbd>
       <ActionIcon kind={option.kind} />
       <span className="mh-tile__label">{option.label}</span>
       <CostChips option={option} />
@@ -234,10 +271,11 @@ export const ActionPanel = (props: ActionPanelProps) => (
   <section aria-label={ACTIONS_LABEL} className="mh-card" data-testid={ACTION_PANEL_TEST_ID}>
     <h2 className="mh-card__title">{ACTIONS_TITLE}</h2>
     <ul className="mh-board">
-      {props.options.map((option) => (
+      {props.options.map((option, index) => (
         <ActionOptionButton
           key={option.kind}
           option={option}
+          keycap={actionKeyOf(index)}
           armed={option.kind === props.armed}
           onArm={props.onArm}
         />

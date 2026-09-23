@@ -18,6 +18,7 @@ import {
   type HeaderRailInput,
   headerRailOf,
 } from "./headerrail";
+import STYLESHEET from "./index.css?raw";
 import { METER_TEST_ID } from "./meters";
 
 /**
@@ -51,10 +52,15 @@ const INPUT: HeaderRailInput = {
   difficulty: "hard",
   view: VIEW,
   pressureMax: BALANCE.hunter.pressureMax,
+  trustMax: BALANCE.hunter.trustMax,
+  remaining: VIEW.hunter,
 };
 
-const displayOf = (kind: string): string | undefined =>
-  headerRailOf(INPUT).find((item) => item.kind === kind)?.display;
+const PLANNED_BUDGET = 590;
+const PLANNED_TRUST = 52;
+
+const displayOf = (kind: string, input: HeaderRailInput = INPUT): string | undefined =>
+  headerRailOf(input).find((item) => item.kind === kind)?.display;
 
 let root: Root | null = null;
 let container: HTMLElement | null = null;
@@ -97,6 +103,22 @@ describe("deriving the header rail", () => {
   it("scales pressure by the maximum it is handed", () => {
     expect(displayOf("pressure")).toBe(`${PRESSURE} of ${BALANCE.hunter.pressureMax}`);
   });
+
+  it("reads the budget and trust the hunter holds while nothing is planned (PLAN M7.4)", () => {
+    expect(displayOf("budget")).toBe("640");
+    expect(displayOf("trust")).toBe(`55 of ${BALANCE.hunter.trustMax}`);
+  });
+
+  it("reads where the plan takes the budget and trust, beside what is held (PLAN M7.4)", () => {
+    const remaining = { ...VIEW.hunter, budget: PLANNED_BUDGET, trust: PLANNED_TRUST };
+    const planned = { ...INPUT, remaining };
+
+    expect(displayOf("budget", planned)).toBe(`640 -> ${PLANNED_BUDGET}`);
+    expect(displayOf("trust", planned)).toBe(
+      `55 -> ${PLANNED_TRUST} of ${BALANCE.hunter.trustMax}`,
+    );
+    expect(displayOf("pressure", planned)).toBe(displayOf("pressure"));
+  });
 });
 
 describe("the header rail", () => {
@@ -109,6 +131,26 @@ describe("the header rail", () => {
         item.getAttribute("data-rail"),
       ),
     ).toEqual([...HEADER_RAIL_KINDS]);
+  });
+
+  it("puts the budget and trust in the rail, where the eye goes (PLAN M7.4)", async () => {
+    await render();
+
+    const railValueOf = (kind: string): string | null | undefined =>
+      container?.querySelector(
+        `[data-testid="${HEADER_RAIL_ITEM_TEST_ID}"][data-rail="${kind}"] .mh-rail__value`,
+      )?.textContent;
+    expect(railValueOf("budget")).toBe("640");
+    expect(railValueOf("trust")).toBe(`55 of ${BALANCE.hunter.trustMax}`);
+  });
+
+  it("colours money gold and trust cyan, by DESIGN.md's hue discipline (PLAN M7.4)", () => {
+    expect(STYLESHEET).toMatch(
+      /\.mh-rail__item\[data-rail="budget"\] \.mh-rail__value \{\n {2}color: var\(--mh-color-exit-gold\);/,
+    );
+    expect(STYLESHEET).toMatch(
+      /\.mh-rail__item\[data-rail="trust"\] \.mh-rail__value \{\n {2}color: var\(--mh-color-accent\);/,
+    );
   });
 
   it("carries no meter test id, so turn.spec.ts's clock locator stays unambiguous", async () => {

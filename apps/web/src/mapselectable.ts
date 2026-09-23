@@ -10,19 +10,37 @@
  *
  * Dimming is presentation only. A dimmed target still reports its click exactly as before; the
  * screen's own `select` is still what drops a click the armed action cannot use.
+ *
+ * **Closed edges (PLAN M7.3).** An edge that already carries a checkpoint is refused a second
+ * (`edge_already_blocked`), so `selectableOf` also takes the ids of the edges that are closed:
+ * the standing containments, and the roadblocks the plan already holds, because `core` applies a
+ * turn's orders in order and the second of two blocks on one edge is refused the same way.
+ * `closedEdgeIdsOf` gathers both. And `select` now asks `selectionSelectable` before taking a
+ * click, so a dimmed target is a refused target, not only a quieter one.
  */
 
 import {
   type Balance,
+  blockedEdgeIdsAt,
+  type Containment,
+  type EdgeId,
   type EdgeKind,
   type HunterActionKind,
   type MapEdge,
+  type Turn,
   targetKindOf,
 } from "@manhunter/core";
+import type { ActionQueue } from "./actionqueue";
+import type { MapSelection } from "./maprenderer";
 
 export type MapSelectable =
   | { readonly kind: "node" }
-  | { readonly kind: "edge"; readonly edgeKinds: readonly EdgeKind[] }
+  | {
+      readonly kind: "edge";
+      readonly edgeKinds: readonly EdgeKind[];
+      /** Edges already closed, by a standing checkpoint or one the plan holds. */
+      readonly closedEdgeIds: readonly EdgeId[];
+    }
   | { readonly kind: "none" };
 
 type EdgeTable = Balance["edges"];
@@ -37,12 +55,26 @@ const blockableKindsOf = (edges: EdgeTable): readonly EdgeKind[] =>
     .filter(isEdgeKindIn(edges))
     .filter((kind) => edges[kind].blockable);
 
-export const selectableOf = (kind: HunterActionKind, edges: EdgeTable): MapSelectable => {
+/** The edges a checkpoint already closes this turn, standing or planned, as a plain list. */
+export const closedEdgeIdsOf = (
+  containments: readonly Containment[],
+  turn: Turn,
+  queue: ActionQueue,
+): readonly EdgeId[] => [
+  ...blockedEdgeIdsAt(containments, turn),
+  ...queue.flatMap((action) => (action.kind === "roadblock" ? [action.edgeId] : [])),
+];
+
+export const selectableOf = (
+  kind: HunterActionKind,
+  edges: EdgeTable,
+  closedEdgeIds: readonly EdgeId[],
+): MapSelectable => {
   const target = targetKindOf(kind);
   if (target === "global") return { kind: "none" };
   if (target === "node") return { kind: "node" };
 
-  return { kind: "edge", edgeKinds: blockableKindsOf(edges) };
+  return { kind: "edge", edgeKinds: blockableKindsOf(edges), closedEdgeIds };
 };
 
 /** `null` is nothing armed, so every target on the map is live. */
@@ -53,5 +85,21 @@ export const edgeSelectable = (selectable: MapSelectable | null, edge: MapEdge):
   if (selectable === null) return true;
   if (selectable.kind !== "edge") return false;
 
-  return selectable.edgeKinds.includes(edge.kind);
+  return selectable.edgeKinds.includes(edge.kind) && !selectable.closedEdgeIds.includes(edge.id);
+};
+
+/**
+ * The same question the map dims by, asked of a click: a node by kind alone, an edge by the edge
+ * it names. An edge the map does not carry is not selectable.
+ */
+export const selectionSelectable = (
+  selectable: MapSelectable | null,
+  selection: MapSelection,
+  edges: readonly MapEdge[],
+): boolean => {
+  if (selection.kind === "node") return nodeSelectable(selectable);
+
+  const edge = edges.find((candidate) => candidate.id === selection.edgeId);
+
+  return edge !== undefined && edgeSelectable(selectable, edge);
 };

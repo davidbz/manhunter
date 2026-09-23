@@ -1,6 +1,12 @@
 /**
- * The operations board's header rail (PLAN M6.2): the case number, the clock, the difficulty and
- * the pressure ticker, read at a glance across the top of the frame.
+ * The operations board's header rail (PLAN M6.2): the case number, the clock, the difficulty, the
+ * budget, public trust and the pressure ticker, read at a glance across the top of the frame.
+ *
+ * **Budget and trust joined the rail at PLAN M7.4**, because the playtest read the budget as
+ * missing: it was on screen, in the intel column's Status card, but not where the eye goes. Each
+ * reads what the queued plan leaves beside what the hunter holds ("1000 -> 850"), the same forecast
+ * the meters show. Budget is gold and trust cyan, by DESIGN.md's hue discipline (money, and the
+ * player's own instrument); the colours are the stylesheet's, keyed on `data-rail`.
  *
  * Presentational and controlled, the `meters.tsx` split: `headerRailOf` is the whole derivation,
  * a pure function from what the hunt already holds to a list of `HeaderRailItem` data, and the
@@ -13,11 +19,19 @@
  */
 
 import type { Difficulty, HunterView } from "@manhunter/core";
-import { hourLabel } from "./meters";
+import { forecastReading, hourLabel } from "./meters";
 import { DIFFICULTY_OPTIONS } from "./newhuntform";
+import type { PlanResources } from "./plancost";
 
 /** Declared as data so a test can assert every kind reaches the DOM, `METER_KINDS`'s precedent. */
-export const HEADER_RAIL_KINDS = ["case", "clock", "difficulty", "pressure"] as const;
+export const HEADER_RAIL_KINDS = [
+  "case",
+  "clock",
+  "difficulty",
+  "budget",
+  "trust",
+  "pressure",
+] as const;
 
 export type HeaderRailKind = (typeof HEADER_RAIL_KINDS)[number];
 
@@ -33,6 +47,10 @@ export type HeaderRailInput = {
   readonly view: HunterView;
   /** `balance.hunter.pressureMax`, passed in so this file knows no balance number of its own. */
   readonly pressureMax: number;
+  /** `balance.hunter.trustMax`, for the same reason. */
+  readonly trustMax: number;
+  /** What the queued plan leaves (PLAN M7.4); the hunter's own resources when nothing is planned. */
+  readonly remaining: PlanResources;
 };
 
 export const HEADER_RAIL_TEST_ID = "header-rail";
@@ -42,6 +60,8 @@ export const HEADER_RAIL_LABELS: Readonly<Record<HeaderRailKind, string>> = {
   case: "Case",
   clock: "Clock",
   difficulty: "Difficulty",
+  budget: "Budget",
+  trust: "Trust",
   pressure: "Pressure",
 };
 
@@ -59,6 +79,16 @@ const clockDisplay = (view: HunterView): string =>
 const difficultyDisplay = (difficulty: Difficulty): string =>
   DIFFICULTY_OPTIONS.find((option) => option.value === difficulty)?.label ?? difficulty;
 
+/** What the hunter holds, and where the plan takes it when the plan moves it at all. */
+const plannedDisplay = (now: number, after: number): string =>
+  forecastReading(now, after === now ? null : after);
+
+const budgetDisplay = (input: HeaderRailInput): string =>
+  plannedDisplay(input.view.hunter.budget, input.remaining.budget);
+
+const trustDisplay = (input: HeaderRailInput): string =>
+  `${plannedDisplay(input.view.hunter.trust, input.remaining.trust)}${OF_SEPARATOR}${input.trustMax}`;
+
 export const headerRailOf = (input: HeaderRailInput): readonly HeaderRailItem[] => [
   { kind: "case", label: HEADER_RAIL_LABELS.case, display: caseDisplay(input.seed) },
   { kind: "clock", label: HEADER_RAIL_LABELS.clock, display: clockDisplay(input.view) },
@@ -67,6 +97,8 @@ export const headerRailOf = (input: HeaderRailInput): readonly HeaderRailItem[] 
     label: HEADER_RAIL_LABELS.difficulty,
     display: difficultyDisplay(input.difficulty),
   },
+  { kind: "budget", label: HEADER_RAIL_LABELS.budget, display: budgetDisplay(input) },
+  { kind: "trust", label: HEADER_RAIL_LABELS.trust, display: trustDisplay(input) },
   {
     kind: "pressure",
     label: HEADER_RAIL_LABELS.pressure,

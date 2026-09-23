@@ -26,8 +26,11 @@ import type { BeliefLegendTheme } from "./belieflegend";
 import type { BeliefFieldTheme, HeatRamp } from "./beliefoverlay";
 import type { CriminalPathTheme } from "./criminalpath";
 import type { FeedRowTheme } from "./feedrow";
+import type { MapFocusBeaconStyle } from "./mapfocusbeacon";
+import type { MapPlanStyle } from "./mapplannedorders";
 import type { MapBlockStyle, MapEdgeStyle, MapTheme, MapWashStyle } from "./maprenderer";
 import type { MapReportPinStyle } from "./mapreportpins";
+import type { MapStreetLabelStyle } from "./mapstreetlabels";
 import type { MeterTheme } from "./meters";
 import type { TransportIconTheme } from "./replayscrubber";
 
@@ -195,10 +198,11 @@ const DURATION_SLOW = "420ms";
  * `prefers-reduced-motion` guard in `index.css`; the tokens exist so no component invents its own
  * timing and so the guard has one set of things to switch off.
  *
- * The five named moments below (PLAN M6.10) are the only things that move, and each confirms
+ * The five named moments below (PLAN M6.10), plus the focus beacon's pulse (PLAN M7.2), are the
+ * only things that move, and each confirms
  * something the player did or was told: the turn they ended advanced, a report they paid for
- * arrived, a meter they spent from moved, a checkpoint they ordered went up, and the hunt they
- * ran ended. `tools/theme/reducedmotion.test.ts` holds every one of them to the guard.
+ * arrived, a meter they spent from moved, a checkpoint they ordered went up, the hunt they ran
+ * ended, and the place they pointed at was found. `tools/theme/reducedmotion.test.ts` holds every one of them to the guard.
  */
 export const MOTION = {
   durationInstant: "90ms",
@@ -222,6 +226,11 @@ export const MOTION = {
   checkpointFire: DURATION_BASE,
   /** The debrief's verdict banner landing, then the tally under it. */
   outcomeSting: DURATION_SLOW,
+  /**
+   * The focus beacon's ring landing on the node a feed row, a node or a pin points at (PLAN M7.2):
+   * confirmation of the link, once per focus, never a loop.
+   */
+  focusPulse: DURATION_SLOW,
   /** How far an arriving element travels to its place: a feed row, the rail's reading, the banner. */
   arrivalOffset: "0.5rem",
 } as const;
@@ -287,6 +296,18 @@ export const METER = {
   height: "0.875rem",
   segmentGap: "3px",
   segments: "10",
+  /**
+   * The plan's forecast on a bar (PLAN M7.4): a hatched stretch between what the hunter holds and
+   * what the plan leaves. `forecastFrom` and `forecastTo` are fractions of the bar, published here
+   * as an empty stretch and overridden inline on each forecast; the rest is the hatch's geometry.
+   */
+  forecastFrom: "0",
+  forecastTo: "0",
+  forecastHatchAngle: "135deg",
+  forecastHatchStripe: "2px",
+  forecastHatchPitch: "5px",
+  /** The queue head's action-point pips, one per point held this turn. */
+  pipSize: "0.625rem",
 } as const;
 
 /**
@@ -473,6 +494,19 @@ const REPORT_PIN: MapReportPinStyle = {
   staleness: FEED_ROW_THEME,
 };
 
+/**
+ * The plate's street index (PLAN M7.1): avenue and street names in the margins the plate's
+ * `padding` leaves, in the display face and the quietest legible text tone, so the index reads as
+ * a street map's furniture and never competes with a road.
+ */
+const STREET_LABELS: MapStreetLabelStyle = {
+  fill: PALETTE.textDim,
+  fontFamily: TYPE_SCALE.familyDisplay,
+  fontSize: 9,
+  inset: 4,
+  letterSpacing: 0.5,
+};
+
 /** The map's whole palette plus its measurements, in the shape `maprenderer.tsx` declares. */
 export const MAP_THEME: MapTheme = {
   padding: 24,
@@ -549,9 +583,52 @@ export const MAP_THEME: MapTheme = {
     glyphBox: 16,
   },
   reportPin: REPORT_PIN,
+  streetLabels: STREET_LABELS,
   glowBlur: GLOW_BLUR,
   edges: EDGE_STYLES,
   districts: DISTRICT_FILLS,
+};
+
+/**
+ * The hover link's beacon (PLAN M7.2): a cyan ring clear of the pip, the reticle and the incident
+ * ring, and a dashed leader to the nearer named margin that stops short of the street index
+ * (`STREET_LABELS.inset` plus a line of its text, and a little air).
+ */
+export const MAP_FOCUS_BEACON_THEME: MapFocusBeaconStyle = {
+  radius: 18,
+  stroke: PALETTE.accent,
+  width: STROKE.base,
+  leaderWidth: STROKE.thin,
+  leaderDash: "3 3",
+  leaderStop: 16,
+};
+
+/**
+ * The plan on the map (PLAN M7.3): cyan, the player's instrument. A planned order is a dashed ring
+ * round its node, clear of the pip and inside the focus beacon, or a dashed barrier the size of a
+ * standing checkpoint across its road, plus a numbered badge standing off below and to the right,
+ * clear of the report pin above and the exit gate up and to the right. The ghost is the same
+ * shape at part strength, and its cost tag is haloed in the plate's ground so it reads over roads.
+ */
+export const MAP_PLAN_THEME: MapPlanStyle = {
+  stroke: PALETTE.accent,
+  width: STROKE.thin,
+  dash: "3 2",
+  ghostOpacity: 0.6,
+  ringRadius: 12,
+  barrierLength: 16,
+  barrierThickness: 5,
+  badgeRadius: 6,
+  badgeFill: PALETTE.surfaceSunken,
+  badgeOffsetX: 11,
+  badgeOffsetY: 11,
+  badgeSpread: 13,
+  fontFamily: TYPE_SCALE.familyDisplay,
+  badgeFontSize: 8,
+  tagFontSize: 9,
+  tagOffset: 16,
+  tagHalo: PALETTE.surfaceSunken,
+  tagHaloWidth: STROKE.thick,
 };
 
 /**

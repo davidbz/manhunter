@@ -14,6 +14,7 @@ import {
   rejectionMessage,
 } from "./dispatcherrors";
 import type { StoreRefusal } from "./gamestore";
+import type { PlaceNames } from "./placenames";
 
 type ActEnvironment = { IS_REACT_ACT_ENVIRONMENT?: boolean };
 (globalThis as ActEnvironment).IS_REACT_ACT_ENVIRONMENT = true;
@@ -23,6 +24,13 @@ const NODE = makeNodeId("n-1");
 
 const BLOCK: HunterAction = { kind: "roadblock", edgeId: EDGE };
 const BRIEFING: HunterAction = { kind: "true_briefing" };
+
+const NAMES: PlaceNames = {
+  nodes: {},
+  edges: { "e-1": "Harbor St" },
+  avenues: [],
+  streets: [],
+};
 
 /**
  * One of every variant, written out rather than generated: the point of the list is that adding
@@ -107,7 +115,7 @@ describe("rejectedRows", () => {
   };
 
   it("names the row of the submitted queue the rejection points at", () => {
-    const rows = rejectedRows([BLOCK, BRIEFING], [REJECTED]);
+    const rows = rejectedRows([BLOCK, BRIEFING], [REJECTED], NAMES);
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.index).toBe(1);
@@ -115,17 +123,19 @@ describe("rejectedRows", () => {
   });
 
   it("does not name a row the rejection does not point at", () => {
-    expect(rejectedRows([BLOCK, BRIEFING], [REJECTED])[0]?.action).not.toContain("Roadblock");
+    expect(rejectedRows([BLOCK, BRIEFING], [REJECTED], NAMES)[0]?.action).not.toContain(
+      "Roadblock",
+    );
   });
 
   it("still carries the reason when the queue has no such row", () => {
-    const rows = rejectedRows([], [REJECTED]);
+    const rows = rejectedRows([], [REJECTED], NAMES);
 
     expect(rows[0]?.message).toBe(rejectionMessage(REJECTED.reason));
   });
 
   it("has no rows when the turn rejected nothing", () => {
-    expect(rejectedRows([BLOCK], [])).toEqual([]);
+    expect(rejectedRows([BLOCK], [], NAMES)).toEqual([]);
   });
 });
 
@@ -156,13 +166,22 @@ afterEach(async () => {
 
 describe("the dispatch errors panel", () => {
   it("draws nothing at all when the dispatch went through", async () => {
-    await render(<DispatchErrors refusal={null} dispatched={[BLOCK]} rejections={[]} />);
+    await render(
+      <DispatchErrors placeNames={NAMES} refusal={null} dispatched={[BLOCK]} rejections={[]} />,
+    );
 
     expect(find(DISPATCH_ERRORS_TEST_ID)).toBeNull();
   });
 
   it("draws the refusal for a dispatch that did not happen", async () => {
-    await render(<DispatchErrors refusal={{ kind: "no_hunt" }} dispatched={[]} rejections={[]} />);
+    await render(
+      <DispatchErrors
+        placeNames={NAMES}
+        refusal={{ kind: "no_hunt" }}
+        dispatched={[]}
+        rejections={[]}
+      />,
+    );
 
     const refusal = find(DISPATCH_REFUSAL_TEST_ID);
     expect(refusal?.getAttribute("data-refusal")).toBe("no_hunt");
@@ -177,14 +196,19 @@ describe("the dispatch errors panel", () => {
     ];
 
     await render(
-      <DispatchErrors refusal={null} dispatched={[BLOCK, BRIEFING]} rejections={rejections} />,
+      <DispatchErrors
+        placeNames={NAMES}
+        refusal={null}
+        dispatched={[BLOCK, BRIEFING]}
+        rejections={rejections}
+      />,
     );
 
     const rows = all(DISPATCH_REJECTION_TEST_ID);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.getAttribute("data-index")).toBe("0");
     expect(rows[0]?.getAttribute("data-rejection")).toBe("edge_already_blocked");
-    expect(rows[0]?.textContent).toContain("e-1");
+    expect(rows[0]?.textContent).toContain("Roadblock - Harbor St");
     expect(rows[1]?.getAttribute("data-index")).toBe("1");
     expect(rows[1]?.textContent).toContain("Brief the press");
   });
@@ -192,6 +216,7 @@ describe("the dispatch errors panel", () => {
   it("draws a refusal and a rejection at once, because they are different surfaces", async () => {
     await render(
       <DispatchErrors
+        placeNames={NAMES}
         refusal={{ kind: "hunt_over", outcome: { kind: "escaped", turn: 9 } }}
         dispatched={[BLOCK]}
         rejections={[{ index: 0, reason: { kind: "unknown_edge", edgeId: EDGE } }]}

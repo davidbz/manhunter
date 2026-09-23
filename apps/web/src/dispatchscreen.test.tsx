@@ -23,15 +23,36 @@ import { DISPATCH_SCREEN_TEST_ID, DispatchScreen } from "./dispatchscreen";
 import { CRIMINAL_DOSSIER_TEST_ID } from "./dossier";
 import { END_SCREEN_OUTCOME_TEST_ID, END_SCREEN_TEST_ID } from "./endscreen";
 import { createGameStore, type GameStore } from "./gamestore";
-import { HEADER_RAIL_TEST_ID } from "./headerrail";
+import { HEADER_RAIL_ITEM_TEST_ID, HEADER_RAIL_TEST_ID } from "./headerrail";
 import { HEATMAP_SUMMARY_TEST_ID, HEATMAP_SUSPECT_TEST_ID } from "./heatmapsummarylist";
 import { LIMITS } from "./limits";
-import { MAP_EDGE_TEST_ID, MAP_NODE_TEST_ID, MAP_TEST_ID } from "./maprenderer";
-import { METERS_TEST_ID } from "./meters";
+import { MAP_FOCUS_BEACON_RING_TEST_ID, MAP_FOCUS_BEACON_TEST_ID } from "./mapfocusbeacon";
+import {
+  MAP_PLAN_COST_TAG_TEST_ID,
+  MAP_PLAN_GHOST_TEST_ID,
+  MAP_PLANNED_ORDER_CLASS,
+  MAP_PLANNED_ORDER_TEST_ID,
+  MAP_PLANNED_ORDERS_TEST_ID,
+} from "./mapplannedorders";
+import {
+  MAP_EDGE_TEST_ID,
+  MAP_NODE_TEST_ID,
+  MAP_OVERLAY_TEST_ID,
+  MAP_PLAN_TEST_ID,
+  MAP_REPORT_PIN_TEST_ID,
+  MAP_TEST_ID,
+} from "./maprenderer";
+import {
+  METER_FORECAST_TEST_ID,
+  METER_KINDS,
+  METER_TEST_ID,
+  METER_VALUE_TEST_ID,
+  METERS_TEST_ID,
+} from "./meters";
 import { NEW_HUNT_SEED_TEST_ID, NEW_HUNT_TEST_ID } from "./newhuntform";
 import { REPLAY_SCREEN_TEST_ID } from "./replayscreen";
 import { REPLAY_SCRUBBER_TEST_ID } from "./replayscrubber";
-import { REPORT_FEED_TEST_ID } from "./reportfeed";
+import { REPORT_ENTRY_TEST_ID, REPORT_FEED_TEST_ID } from "./reportfeed";
 import { RESTART_TEST_ID } from "./restartbutton";
 import { SHARE_LINK_LOAD_ERROR_TEST_ID, SHARE_LINK_TEST_ID } from "./sharelink";
 import { SHARE_LINK_COPY_TEST_ID } from "./sharelinkcopy";
@@ -39,7 +60,7 @@ import { SKIP_LINK_TEST_ID } from "./skiplink";
 import { GameStoreProvider } from "./storecontext";
 import {
   END_TURN_TEST_ID,
-  QUEUE_ADD_TEST_ID,
+  QUEUE_AP_TEST_ID,
   QUEUE_REFUSAL_TEST_ID,
   QUEUE_REMOVE_TEST_ID,
   QUEUE_ROW_TEST_ID,
@@ -218,80 +239,121 @@ describe("the dispatch screen", () => {
   });
 });
 
-describe("narrowing the map to the armed action's targets", () => {
-  it("lets a roadblock take a road and ignores every district", async () => {
+/**
+ * PLAN M7.3: an armed tool places its order where the map is clicked, so there is no longer a
+ * selection to narrow while a tool is armed. The narrowing M5.5a asserted here is now asserted on
+ * what the click does: a target the tool accepts becomes a queue row, anything else is ignored.
+ */
+
+const queueRowCount = (): number => all(QUEUE_ROW_TEST_ID).length;
+
+const queuedActions = (): readonly (string | null)[] =>
+  all(QUEUE_ROW_TEST_ID).map((row) => row.getAttribute("data-action"));
+
+const plannedTargets = (): readonly (string | null)[] =>
+  all(MAP_PLANNED_ORDER_TEST_ID).map((mark) => mark.getAttribute("data-target"));
+
+const tileOf = (kind: HunterActionKind): Element | null =>
+  container?.querySelector(`[data-testid="${ACTION_OPTION_TEST_ID}"][data-action="${kind}"]`) ??
+  null;
+
+const armedKind = (): string | null =>
+  all(ACTION_OPTION_TEST_ID)
+    .find((tile) => tile.getAttribute("data-armed") === "true")
+    ?.getAttribute("data-action") ?? null;
+
+const openRoads = (): readonly Element[] =>
+  all(MAP_EDGE_TEST_ID).filter((edge) => edge.getAttribute("data-selectable") === "true");
+
+const openRoad = (): Element => {
+  const road = openRoads()[0];
+  if (road === undefined) throw new Error("expected a road the roadblock can close");
+
+  return road;
+};
+
+const nodeAt = (index: number): Element => {
+  const node = all(MAP_NODE_TEST_ID)[index];
+  if (node === undefined) throw new Error(`expected a district at ${index}`);
+
+  return node;
+};
+
+const pointAtTarget = async (element: Element): Promise<void> => {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+  });
+};
+
+const press = async (key: string): Promise<void> => {
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  });
+};
+
+describe("placing orders from the map (PLAN M7.3)", () => {
+  it("places a roadblock on the road clicked, and ignores every district", async () => {
     await started();
     await arm("roadblock");
 
     await clickOn(firstNode());
 
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
-    expect(draftReady()).toBe("false");
+    expect(queueRowCount()).toBe(0);
 
-    await clickOn(firstEdge());
+    const road = openRoad();
+    await clickOn(road);
 
-    expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(1);
-    expect(draftReady()).toBe("true");
+    expect(queuedActions()).toEqual(["roadblock"]);
+    expect(plannedTargets()).toEqual([road.getAttribute("data-edgeid")]);
   });
 
-  it("lets a canvass take a district and ignores every road", async () => {
+  it("places a canvass on the district clicked, and ignores every road", async () => {
     await started();
     await arm("canvass");
 
     await clickOn(firstEdge());
 
-    expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
-    expect(draftReady()).toBe("false");
+    expect(queueRowCount()).toBe(0);
 
     await clickOn(firstNode());
 
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(1);
-    expect(draftReady()).toBe("true");
+    expect(queuedActions()).toEqual(["canvass"]);
   });
 
-  it("narrows to districts for CCTV too, because core says that is what it takes", async () => {
+  it("targets districts for CCTV too, because core says that is what it takes", async () => {
     await started();
     await arm("pull_cctv");
 
     expect(targetKindOf("pull_cctv")).toBe("node");
 
     await clickOn(firstEdge());
-    expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
+    expect(queueRowCount()).toBe(0);
 
     await clickOn(firstNode());
-    expect(draftReady()).toBe("true");
+    expect(queuedActions()).toEqual(["pull_cctv"]);
   });
 
-  it("drops a selection the newly armed action cannot use", async () => {
-    await started();
-
-    await clickOn(firstNode());
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(1);
-
+  /** The absorbed M6.5 Inbox item: a dimmed road is refused by the board, not by core later. */
+  it("ignores a road the roadblock cannot close, and one it has already closed", async () => {
+    const store = await started();
     await arm("roadblock");
+    const unblockableKinds = Object.entries(store.getState().balance.edges)
+      .filter(([, properties]) => !properties.blockable)
+      .map(([kind]) => kind);
+    const footpath = all(MAP_EDGE_TEST_ID).find((edge) =>
+      unblockableKinds.includes(edge.getAttribute("data-edgekind") ?? ""),
+    );
+    if (footpath === undefined) throw new Error("expected a road no roadblock can close");
 
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
-    expect(draftReady()).toBe("false");
-  });
+    await clickOn(footpath);
+    expect(queueRowCount()).toBe(0);
 
-  it("keeps a selection the newly armed action can still use", async () => {
-    await started();
-    await arm("canvass");
-    await clickOn(firstNode());
+    const road = openRoad();
+    await clickOn(road);
+    await clickOn(road);
 
-    await arm("pull_cctv");
-
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(1);
-    expect(draftReady()).toBe("true");
-  });
-
-  it("needs no map target at all for a briefing", async () => {
-    await started();
-    await arm("true_briefing");
-
-    expect(draftReady()).toBe("true");
-    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
-    expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
+    expect(queueRowCount()).toBe(1);
+    expect(road.getAttribute("data-selectable")).toBe("false");
   });
 
   it("dims what the armed action cannot target, and swaps what it dims when re-armed", async () => {
@@ -317,25 +379,251 @@ describe("narrowing the map to the armed action's targets", () => {
     expect(dimmed(MAP_EDGE_TEST_ID)).toHaveLength(all(MAP_EDGE_TEST_ID).length);
   });
 
-  it("ignores the map entirely while a briefing is armed", async () => {
+  it("selects nothing while a tool is armed, and drops the selection it was armed over", async () => {
+    await started();
+    await clickOn(firstNode());
+    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(1);
+
+    await arm("canvass");
+
+    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
+
+    await clickOn(nodeAt(1));
+
+    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
+  });
+
+  it("takes three canvasses on three districts in four clicks", async () => {
+    const store = await started();
+    expect(store.getState().balance.hunter.actionPointsPerTurn).toBe(3);
+
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+    await clickOn(nodeAt(1));
+    await clickOn(nodeAt(2));
+
+    expect(queuedActions()).toEqual(["canvass", "canvass", "canvass"]);
+    expect(plannedTargets()).toEqual(
+      [0, 1, 2].map((index) => nodeAt(index).getAttribute("data-nodeid")),
+    );
+  });
+
+  it("keeps the tool armed while the plan can pay for another, and lets go when it cannot", async () => {
+    await started();
+    await arm("canvass");
+
+    await clickOn(nodeAt(0));
+    expect(armedKind()).toBe("canvass");
+
+    await clickOn(nodeAt(1));
+    await clickOn(nodeAt(2));
+
+    expect(armedKind()).toBeNull();
+  });
+
+  it("disables every tile the plan can no longer afford, before the player tries it", async () => {
+    await started();
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+
+    expect(tileOf("roadblock")?.hasAttribute("disabled")).toBe(false);
+
+    await clickOn(nodeAt(1));
+    await clickOn(nodeAt(2));
+
+    for (const tile of all(ACTION_OPTION_TEST_ID)) {
+      expect(tile.hasAttribute("disabled")).toBe(true);
+      expect(tile.getAttribute("data-affordable")).toBe("false");
+    }
+  });
+
+  it("queues a briefing on the tile click, since it has no target", async () => {
     await started();
     await arm("true_briefing");
+
+    expect(queuedActions()).toEqual(["true_briefing"]);
 
     await clickOn(firstNode());
     await clickOn(firstEdge());
 
+    expect(queueRowCount()).toBe(1);
     expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
     expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
   });
+
+  it("stacks different actions into the same turn", async () => {
+    await started();
+    await arm("roadblock");
+    await clickOn(openRoad());
+    await arm("true_briefing");
+
+    expect(queuedActions()).toEqual(["roadblock", "true_briefing"]);
+  });
+
+  /** AGENTS.md section 5: the count bound is still the first thing `enqueue` checks. */
+  it("never holds more rows than LIMITS.maxQueuedActions", async () => {
+    await started();
+    for (let pressed = 0; pressed <= LIMITS.maxQueuedActions; pressed += 1) {
+      await arm("true_briefing");
+    }
+
+    expect(queueRowCount()).toBeLessThanOrEqual(LIMITS.maxQueuedActions);
+    expect(find(QUEUE_REFUSAL_TEST_ID)).toBeNull();
+  });
 });
 
-/**
- * PLAN M5.5b: the queue, the turn it becomes, and the two error surfaces PLAN M5.2's note names.
- * The Playwright half of the acceptance criterion is `e2e/turn.spec.ts`; these are the assertions
- * that are cheaper and more exhaustive under jsdom ("Decisions": Playwright keeps two flows).
- */
+describe("disarming and arming without the pointer (PLAN M7.3)", () => {
+  it("disarms on Escape, and places nothing on the next click", async () => {
+    await started();
+    await arm("canvass");
 
-const queueRowCount = (): number => all(QUEUE_ROW_TEST_ID).length;
+    await press("Escape");
+
+    expect(armedKind()).toBeNull();
+
+    await clickOn(firstNode());
+
+    expect(queueRowCount()).toBe(0);
+    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(1);
+  });
+
+  it("disarms on a right-click on the map, and keeps the browser's menu away", async () => {
+    await started();
+    await arm("roadblock");
+    const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    await act(async () => {
+      find(MAP_TEST_ID)?.dispatchEvent(menu);
+    });
+
+    expect(armedKind()).toBeNull();
+    expect(menu.defaultPrevented).toBe(true);
+  });
+
+  it("leaves the browser's menu alone while nothing is armed", async () => {
+    await started();
+    const menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+
+    await act(async () => {
+      find(MAP_TEST_ID)?.dispatchEvent(menu);
+    });
+
+    expect(menu.defaultPrevented).toBe(false);
+  });
+
+  it("arms the tile whose number is pressed", async () => {
+    await started();
+
+    await press("2");
+    expect(armedKind()).toBe("canvass");
+
+    await press("1");
+    expect(armedKind()).toBe("roadblock");
+  });
+
+  it("ignores a number pressed with a modifier, or into a text field", async () => {
+    await started();
+    const field = document.createElement("input");
+    container?.append(field);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "2", ctrlKey: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
+    });
+
+    expect(armedKind()).toBeNull();
+  });
+
+  it("does not arm a tile by its key once the plan cannot afford it", async () => {
+    await started();
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+    await clickOn(nodeAt(1));
+    await clickOn(nodeAt(2));
+
+    await press("1");
+
+    expect(armedKind()).toBeNull();
+    expect(queueRowCount()).toBe(3);
+  });
+});
+
+describe("the live plan on the map (PLAN M7.3)", () => {
+  const marks = (): readonly Element[] => all(MAP_PLANNED_ORDER_TEST_ID);
+
+  it("draws a numbered marker on every placed order, in the layer above the targets", async () => {
+    await started();
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+    await clickOn(nodeAt(1));
+
+    expect(marks().map((mark) => mark.getAttribute("data-index"))).toEqual(["0", "1"]);
+    expect(marks()[1]?.getAttribute("data-target")).toBe(nodeAt(1).getAttribute("data-nodeid"));
+    expect(find(MAP_PLAN_TEST_ID)?.contains(find(MAP_PLANNED_ORDERS_TEST_ID))).toBe(true);
+  });
+
+  it("removes an order when its marker is clicked", async () => {
+    await started();
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+    await clickOn(nodeAt(1));
+    const badge = marks()[0]?.querySelector(`.${MAP_PLANNED_ORDER_CLASS}`);
+    if (!badge) throw new Error("expected the first order's marker");
+
+    await act(async () => {
+      badge.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+
+    expect(queueRowCount()).toBe(1);
+    expect(plannedTargets()).toEqual([nodeAt(1).getAttribute("data-nodeid")]);
+  });
+
+  it("removes an order from its queue row, which gives the plan its points back", async () => {
+    await started();
+    await arm("canvass");
+    await clickOn(nodeAt(0));
+    await clickOn(nodeAt(1));
+    await clickOn(nodeAt(2));
+
+    await clickOn(all(QUEUE_REMOVE_TEST_ID)[0] as Element);
+
+    expect(queueRowCount()).toBe(2);
+    expect(marks()).toHaveLength(2);
+    expect(tileOf("canvass")?.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("previews the armed order on the target pointed at, with its price and place", async () => {
+    await started();
+    await arm("roadblock");
+    const road = openRoad();
+
+    await pointAtTarget(road);
+
+    const ghost = find(MAP_PLAN_GHOST_TEST_ID);
+    expect(ghost?.getAttribute("data-action")).toBe("roadblock");
+    expect(ghost?.getAttribute("data-target")).toBe(road.getAttribute("data-edgeid"));
+    expect(find(MAP_PLAN_COST_TAG_TEST_ID)?.textContent).toMatch(/^-1 AP -50 -3 trust - /);
+    expect(draftReady()).toBe("true");
+  });
+
+  it("previews nothing on a target the armed tool would not take", async () => {
+    await started();
+    await arm("roadblock");
+
+    await pointAtTarget(firstNode());
+
+    expect(find(MAP_PLAN_GHOST_TEST_ID)).toBeNull();
+    expect(draftReady()).toBe("false");
+  });
+
+  it("previews nothing while no tool is armed", async () => {
+    await started();
+
+    await pointAtTarget(firstNode());
+
+    expect(find(MAP_PLAN_GHOST_TEST_ID)).toBeNull();
+  });
+});
 
 const turnOf = (store: GameStore): number => {
   const { hunt } = store.getState();
@@ -351,23 +639,13 @@ const outcomeOf = (store: GameStore): string => {
   return hunt.view.outcome.kind;
 };
 
-const addToTurn = async (): Promise<void> => {
-  await clickOn(find(QUEUE_ADD_TEST_ID) as Element);
-};
-
 const endTurn = async (): Promise<void> => {
   await clickOn(find(END_TURN_TEST_ID) as Element);
 };
 
 const queueRoadblock = async (): Promise<void> => {
   await arm("roadblock");
-  await clickOn(firstEdge());
-  await addToTurn();
-};
-
-const queueBriefing = async (): Promise<void> => {
-  await arm("true_briefing");
-  await addToTurn();
+  await clickOn(openRoad());
 };
 
 /** Ends turns through the store until the hunt settles, so the screen is looking at a dead world. */
@@ -380,66 +658,6 @@ const playOut = async (store: GameStore): Promise<void> => {
 };
 
 const PLAY_OUT_LIMIT = 24;
-
-describe("queueing a turn", () => {
-  it("stages nothing until the draft is complete", async () => {
-    await started();
-    await arm("roadblock");
-
-    expect(find(QUEUE_ADD_TEST_ID)?.hasAttribute("disabled")).toBe(true);
-    expect(queueRowCount()).toBe(0);
-  });
-
-  it("takes the armed action and its target into the turn", async () => {
-    await started();
-    await queueRoadblock();
-
-    expect(queueRowCount()).toBe(1);
-    expect(all(QUEUE_ROW_TEST_ID)[0]?.getAttribute("data-action")).toBe("roadblock");
-  });
-
-  it("lets go of the board once a row is staged, so the same one is not staged twice", async () => {
-    await started();
-    await queueRoadblock();
-
-    expect(draftReady()).toBe("false");
-    expect(selectedCount(MAP_EDGE_TEST_ID)).toBe(0);
-    expect(find(QUEUE_ADD_TEST_ID)?.hasAttribute("disabled")).toBe(true);
-  });
-
-  it("stacks more than one action into the same turn", async () => {
-    await started();
-    await queueRoadblock();
-    await queueBriefing();
-
-    expect(queueRowCount()).toBe(2);
-  });
-
-  it("drops the row the player asked to drop", async () => {
-    await started();
-    await queueRoadblock();
-    await queueBriefing();
-
-    await clickOn(all(QUEUE_REMOVE_TEST_ID)[0] as Element);
-
-    expect(queueRowCount()).toBe(1);
-    expect(all(QUEUE_ROW_TEST_ID)[0]?.getAttribute("data-action")).toBe("true_briefing");
-  });
-
-  /** AGENTS.md section 5, at the boundary the clicks arrive on: refused, never truncated. */
-  it("refuses the row past LIMITS.maxQueuedActions and keeps the full turn", async () => {
-    await started();
-    for (let staged = 0; staged < LIMITS.maxQueuedActions; staged += 1) {
-      await queueBriefing();
-    }
-    expect(queueRowCount()).toBe(LIMITS.maxQueuedActions);
-
-    await queueBriefing();
-
-    expect(queueRowCount()).toBe(LIMITS.maxQueuedActions);
-    expect(find(QUEUE_REFUSAL_TEST_ID)?.getAttribute("data-refusal")).toBe("too_many_queued");
-  });
-});
 
 describe("ending a turn", () => {
   it("moves the clock on, which is what the turn counter reads", async () => {
@@ -471,55 +689,58 @@ describe("ending a turn", () => {
     expect(store.getState().hunt?.recordedActions[0]).toHaveLength(1);
   });
 
-  it("empties the queue, so the next turn starts from nothing", async () => {
+  it("empties the plan and disarms, so the next turn starts from nothing", async () => {
     await started();
 
     await queueRoadblock();
     await endTurn();
 
     expect(queueRowCount()).toBe(0);
+    expect(all(MAP_PLANNED_ORDER_TEST_ID)).toHaveLength(0);
+    expect(armedKind()).toBeNull();
   });
 });
 
+/**
+ * The board can no longer queue a turn `core` would reject for want of points (PLAN M7.3), so the
+ * rejection surface is driven the one way a rejection can still arrive: a turn handed to the store
+ * directly, as a replay would hand it.
+ */
 describe("the errors a dispatch comes back with", () => {
-  it("shows none while the turn is still being staged", async () => {
+  const OVER_ALLOWANCE = BALANCE.hunter.actionPointsPerTurn + 1;
+  const briefings = Array.from({ length: OVER_ALLOWANCE }, () => ({
+    kind: "true_briefing" as const,
+  }));
+
+  it("shows none while the turn is still being planned", async () => {
     await started();
     await queueRoadblock();
 
     expect(find(DISPATCH_ERRORS_TEST_ID)).toBeNull();
   });
 
-  it("marks the row the turn would not take, by its place in the queue", async () => {
+  it("marks the order the turn would not take, by its place in the turn", async () => {
     const store = await started();
-    const overAllowance = store.getState().balance.hunter.actionPointsPerTurn + 1;
-    for (let staged = 0; staged < overAllowance; staged += 1) {
-      await queueBriefing();
-    }
 
-    await endTurn();
+    await act(async () => store.getState().endTurn(briefings));
 
     const rejections = all(DISPATCH_REJECTION_TEST_ID);
     expect(rejections).toHaveLength(1);
-    expect(rejections[0]?.getAttribute("data-index")).toBe(String(overAllowance - 1));
+    expect(rejections[0]?.getAttribute("data-index")).toBe(String(OVER_ALLOWANCE - 1));
     expect(rejections[0]?.getAttribute("data-rejection")).toBe("not_enough_action_points");
     expect(find(DISPATCH_REFUSAL_TEST_ID)).toBeNull();
   });
 
-  it("still played the turn the rejected row was in", async () => {
+  it("still played the turn the rejected order was in", async () => {
     const store = await started();
     const before = turnOf(store);
-    const overAllowance = store.getState().balance.hunter.actionPointsPerTurn + 1;
-    for (let staged = 0; staged < overAllowance; staged += 1) {
-      await queueBriefing();
-    }
 
-    await endTurn();
+    await act(async () => store.getState().endTurn(briefings));
 
     expect(turnOf(store)).toBe(before + 1);
     expect(queueRowCount()).toBe(0);
   });
 });
-
 /**
  * PLAN M5.6a, resolving the Inbox note M5.5b left: once the hunt is over, this screen swaps to
  * `EndScreenPanel` instead of waiting for a further dispatch to be refused. The two tests this
@@ -778,5 +999,187 @@ describe("the heatmap's text equivalent (PLAN M6.10)", () => {
     await playOut(store);
 
     expect(find(REPLAY_SCREEN_TEST_ID)?.contains(find(HEATMAP_SUMMARY_TEST_ID))).toBe(true);
+  });
+});
+
+const REPORTING_TURNS = 2;
+
+describe("the hover link between the feed and the map (PLAN M7.2)", () => {
+  /** Two turns of intel ordered through the store, so the feed has rows at more than one node. */
+  const withReports = async (): Promise<GameStore> => {
+    const store = await started();
+    const map = store.getState().hunt?.view.map;
+    const cctvAt = map?.nodes[0]?.id;
+    if (map === undefined || cctvAt === undefined) throw new Error("expected a hunt to be running");
+    for (let turn = 0; turn < REPORTING_TURNS; turn += 1) {
+      await act(async () =>
+        store.getState().endTurn([
+          { kind: "canvass", nodeId: map.incidentNodeId },
+          { kind: "pull_cctv", nodeId: cctvAt },
+        ]),
+      );
+    }
+
+    return store;
+  };
+
+  const pointAt = async (element: Element, type: "pointerover" | "pointerout"): Promise<void> => {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+    });
+  };
+
+  const rowNodeIds = (): readonly (string | null)[] =>
+    all(REPORT_ENTRY_TEST_ID).map((row) => row.getAttribute("data-nodeid"));
+
+  const linkedRows = (): readonly Element[] =>
+    all(REPORT_ENTRY_TEST_ID).filter((row) => row.getAttribute("data-linked") === "true");
+
+  it("puts the beacon on a feed row's node while the row is pointed at", async () => {
+    await withReports();
+    const row = all(REPORT_ENTRY_TEST_ID).at(-1);
+    if (row === undefined) throw new Error("expected the feed to hold a report");
+
+    await pointAt(row, "pointerover");
+
+    const ring = find(MAP_FOCUS_BEACON_RING_TEST_ID);
+    expect(ring?.getAttribute("data-nodeid")).toBe(row.getAttribute("data-nodeid"));
+    expect(find(MAP_OVERLAY_TEST_ID)?.contains(ring)).toBe(true);
+
+    await pointAt(row, "pointerout");
+
+    expect(find(MAP_FOCUS_BEACON_RING_TEST_ID)).toBeNull();
+  });
+
+  it("puts the beacon on a feed row's node while the row has keyboard focus", async () => {
+    await withReports();
+    const row = all(REPORT_ENTRY_TEST_ID)[0];
+    if (!(row instanceof HTMLElement)) throw new Error("expected the feed to hold a report");
+
+    await act(async () => row.focus());
+
+    expect(find(MAP_FOCUS_BEACON_RING_TEST_ID)?.getAttribute("data-nodeid")).toBe(
+      row.getAttribute("data-nodeid"),
+    );
+  });
+
+  it("marks exactly the rows at a pin's node as linked while the pin is pointed at", async () => {
+    await withReports();
+    const pins = all(MAP_REPORT_PIN_TEST_ID);
+    const pin = pins.find((each) =>
+      rowNodeIds().some((nodeId) => nodeId === each.getAttribute("data-nodeid")),
+    );
+    if (pin === undefined) throw new Error("expected a pin over a reported node");
+    const nodeId = pin.getAttribute("data-nodeid");
+    const atNode = all(REPORT_ENTRY_TEST_ID).filter(
+      (row) => row.getAttribute("data-nodeid") === nodeId,
+    );
+
+    expect(linkedRows()).toEqual([]);
+    await pointAt(pin, "pointerover");
+
+    expect(atNode.length).toBeGreaterThan(0);
+    expect(atNode.length).toBeLessThan(all(REPORT_ENTRY_TEST_ID).length);
+    expect(linkedRows()).toEqual(atNode);
+
+    await pointAt(pin, "pointerout");
+
+    expect(linkedRows()).toEqual([]);
+  });
+
+  it("links the rows at a node pointed at on the map, and selects nothing by it", async () => {
+    await withReports();
+    const nodeId = rowNodeIds()[0] ?? null;
+    const node = all(MAP_NODE_TEST_ID).find((each) => each.getAttribute("data-nodeid") === nodeId);
+    if (node === undefined) throw new Error("expected the reported node on the map");
+
+    await pointAt(node, "pointerover");
+
+    expect(linkedRows().map((row) => row.getAttribute("data-nodeid"))).toEqual(
+      rowNodeIds().filter((each) => each === nodeId),
+    );
+    expect(find(MAP_FOCUS_BEACON_RING_TEST_ID)?.getAttribute("data-nodeid")).toBe(nodeId);
+    expect(selectedCount(MAP_NODE_TEST_ID)).toBe(0);
+  });
+
+  it("draws the beacon in a layer that takes no pointer events", async () => {
+    await started();
+
+    const layer = find(MAP_FOCUS_BEACON_TEST_ID);
+    expect(find(MAP_OVERLAY_TEST_ID)?.contains(layer)).toBe(true);
+    expect(layer?.getAttribute("style")).toContain("pointer-events: none");
+  });
+});
+
+describe("the plan's forecast (PLAN M7.4)", () => {
+  const { hunter, actions } = BALANCE;
+
+  const meterOf = (kind: string): Element | null =>
+    container?.querySelector(`[data-testid="${METER_TEST_ID}"][data-meter="${kind}"]`) ?? null;
+
+  const readingOf = (kind: string): string =>
+    meterOf(kind)?.querySelector(`[data-testid="${METER_VALUE_TEST_ID}"]`)?.textContent ?? "";
+
+  const hatched = (): readonly (string | null)[] =>
+    all(METER_FORECAST_TEST_ID).map(
+      (hatch) =>
+        hatch.closest(`[data-testid="${METER_TEST_ID}"]`)?.getAttribute("data-meter") ?? null,
+    );
+
+  const railOf = (kind: string): string | null | undefined =>
+    container?.querySelector(`[data-testid="${HEADER_RAIL_ITEM_TEST_ID}"][data-rail="${kind}"] dd`)
+      ?.textContent;
+
+  const valuesOf = (): readonly (string | null)[] =>
+    METER_KINDS.map((kind) => meterOf(kind)?.getAttribute("data-value") ?? null);
+
+  it("puts the budget in the header rail from the first turn", async () => {
+    await started();
+
+    expect(railOf("budget")).toBe(String(hunter.startingBudget));
+    expect(railOf("trust")).toBe(`${hunter.startingTrust} of ${hunter.trustMax}`);
+  });
+
+  it("moves the forecast on every meter a queued order touches, and on no other", async () => {
+    await started();
+    const before = valuesOf();
+
+    await arm("roadblock");
+    await clickOn(openRoad());
+
+    const points = hunter.actionPointsPerTurn - actions.roadblock.actionPointCost;
+    const budget = hunter.startingBudget - actions.roadblock.budgetCost;
+    const trust = hunter.startingTrust - actions.roadblock.trustCost;
+    expect(hatched()).toEqual(["action_points", "budget", "trust"]);
+    expect(readingOf("action_points")).toContain(`${hunter.actionPointsPerTurn} -> ${points}`);
+    expect(readingOf("budget")).toContain(`${hunter.startingBudget} -> ${budget}`);
+    expect(readingOf("trust")).toContain(`${hunter.startingTrust} -> ${trust}`);
+    expect(railOf("budget")).toBe(`${hunter.startingBudget} -> ${budget}`);
+    expect(railOf("trust")).toBe(`${hunter.startingTrust} -> ${trust} of ${hunter.trustMax}`);
+    expect(find(QUEUE_AP_TEST_ID)?.textContent).toBe(
+      `${actions.roadblock.actionPointCost} of ${hunter.actionPointsPerTurn} AP planned`,
+    );
+    expect(valuesOf()).toEqual(before);
+  });
+
+  it("forecasts a briefing's trust as a gain, and spends no budget on it", async () => {
+    await started();
+
+    await arm("true_briefing");
+
+    expect(hatched()).toEqual(["action_points", "trust"]);
+    expect(readingOf("trust")).toContain(
+      `${hunter.startingTrust} -> ${hunter.startingTrust + actions.trueBriefing.trustGain}`,
+    );
+  });
+
+  it("drops the forecast when the order is taken back out", async () => {
+    await started();
+    await queueRoadblock();
+
+    await clickOn(all(QUEUE_REMOVE_TEST_ID)[0] as Element);
+
+    expect(hatched()).toEqual([]);
+    expect(railOf("budget")).toBe(String(hunter.startingBudget));
   });
 });

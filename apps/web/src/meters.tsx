@@ -14,10 +14,18 @@
  * `metersOf` is the whole of the derivation, and it is a pure function from view plus bounds to a
  * list of `Meter` data. The component only draws what it returns, so what is shown and how it is
  * shown can be tested apart.
+ *
+ * **Each meter the plan moves shows a forecast (PLAN M7.4).** `remaining` is what the queued plan
+ * leaves (`actionqueue.ts`'s `remainingAfter`); a meter it moves reads "now -> after" and draws a
+ * hatched segment over the stretch of bar the plan spends or gains. Action points, budget and
+ * trust move; pressure and the clock do not, because nothing the hunter queues moves them. The
+ * bar and `data-value` stay on the current value: the forecast is what End Turn would do, not what
+ * the hunter holds, and `turn.spec.ts` reads the clock off `data-value`.
  */
 
 import type { Hour, HunterView } from "@manhunter/core";
 import type { CSSProperties } from "react";
+import type { PlanResources } from "./plancost";
 import { METER_THEME, PALETTE } from "./theme";
 
 /**
@@ -49,8 +57,21 @@ export type MeterTheme = {
 };
 
 /**
+ * Which of the plan's resources each meter reads, or `null` for a meter no order moves. A table
+ * rather than a branch, so a new meter kind is a compile error here until it says.
+ */
+export const METER_PLANNED_RESOURCE: Readonly<Record<MeterKind, keyof PlanResources | null>> = {
+  action_points: "actionPoints",
+  budget: "budget",
+  trust: "trust",
+  pressure: null,
+  clock: null,
+};
+
+/**
  * One meter, ready to draw. `display` is the reading; `value`, `min` and `max` are the bar.
  * `segments` is the unit count a `unit` meter is cut into, or `null` for the stylesheet default.
+ * `forecast` is what the plan leaves the meter at, or `null` when the plan does not move it.
  */
 export type Meter = {
   readonly kind: MeterKind;
@@ -60,9 +81,23 @@ export type Meter = {
   readonly max: number;
   readonly display: string;
   readonly segments: number | null;
+  readonly forecast: number | null;
 };
 
-type MeterReading = Omit<Meter, "segments">;
+type MeterReading = Omit<Meter, "segments" | "forecast">;
+
+/** Whether the plan spends from a meter or adds to it, which the hatch is drawn in. */
+export type ForecastDirection = "spend" | "gain";
+
+/**
+ * The stretch of bar the plan moves, as fractions of the bar from its left end. A plan that
+ * overspends is drawn to the end of the bar, not past it; the reading still says how far over.
+ */
+export type ForecastSpan = {
+  readonly from: number;
+  readonly to: number;
+  readonly direction: ForecastDirection;
+};
 
 /**
  * The part of `balance.hunter` the meters are scaled by. Structural rather than `Balance` itself,
@@ -80,11 +115,14 @@ export type MeterBounds = {
 export type MetersProps = {
   readonly view: HunterView;
   readonly bounds: MeterBounds;
+  /** What the queued plan leaves (PLAN M7.4). Without one, nothing is planned. */
+  readonly remaining?: PlanResources;
 };
 
 export const METERS_TEST_ID = "meters";
 export const METER_TEST_ID = "meter";
 export const METER_VALUE_TEST_ID = "meter-value";
+export const METER_FORECAST_TEST_ID = "meter-forecast";
 
 /** Every word the meters say, in one table, for the reason `REPORT_SOURCE_LABELS` is one. */
 export const METER_LABELS: Readonly<Record<MeterKind, string>> = {
@@ -105,12 +143,20 @@ const HOUR_DIGITS = 2;
 const HOUR_PAD = "0";
 const ON_THE_HOUR = ":00";
 
+const FORECAST_ARROW = " -> ";
+
 const NONE = 0;
+const WHOLE = 1;
 
 export const hourLabel = (hour: Hour): string =>
   `${String(hour).padStart(HOUR_DIGITS, HOUR_PAD)}${ON_THE_HOUR}`;
 
-const outOf = (value: number, maximum: number): string => `${value}${OF_SEPARATOR}${maximum}`;
+/** A value, or the value and where the plan takes it: "1000 -> 850". The rail reads it too. */
+export const forecastReading = (value: number, forecast: number | null): string =>
+  forecast === null ? String(value) : `${value}${FORECAST_ARROW}${forecast}`;
+
+const outOf = (value: number | string, maximum: number): string =>
+  `${value}${OF_SEPARATOR}${maximum}`;
 
 /**
  * The clock reads as a wall hour and a deadline at once, because DESIGN.md's pressure is both:
@@ -184,15 +230,57 @@ const readingsOf = (view: HunterView, bounds: MeterBounds): readonly MeterReadin
   ];
 };
 
+/** Where the plan leaves a meter, or `null` when no order moves it or the plan leaves it level. */
+export const forecastOf = (reading: MeterReading, remaining: PlanResources): number | null => {
+  const resource = METER_PLANNED_RESOURCE[reading.kind];
+  if (resource === null) return null;
+
+  const after = remaining[resource];
+  return after === reading.value ? null : after;
+};
+
+const displayOf = (reading: MeterReading, forecast: number | null): string =>
+  forecast === null
+    ? reading.display
+    : outOf(forecastReading(reading.value, forecast), reading.max);
+
 export const metersOf = (
   view: HunterView,
   bounds: MeterBounds,
+  remaining: PlanResources = view.hunter,
   theme: MeterTheme = METER_THEME,
 ): readonly Meter[] =>
-  readingsOf(view, bounds).map((reading) => ({
-    ...reading,
-    segments: segmentsOf(reading, theme),
-  }));
+  readingsOf(view, bounds).map((reading) => {
+    const forecast = forecastOf(reading, remaining);
+
+    return {
+      ...reading,
+      display: displayOf(reading, forecast),
+      segments: segmentsOf(reading, theme),
+      forecast,
+    };
+  });
+
+const clamp = (value: number, minimum: number, maximum: number): number =>
+  Math.min(Math.max(value, minimum), maximum);
+
+/** The hatched stretch of a meter's bar, or `null` when there is no forecast or no bar to mark. */
+export const forecastSpanOf = (meter: Meter): ForecastSpan | null => {
+  if (meter.forecast === null) return null;
+
+  const span = meter.max - meter.min;
+  if (span <= NONE) return null;
+
+  const fractionOf = (value: number): number => clamp((value - meter.min) / span, NONE, WHOLE);
+  const now = fractionOf(meter.value);
+  const after = fractionOf(meter.forecast);
+
+  return {
+    from: Math.min(now, after),
+    to: Math.max(now, after),
+    direction: meter.forecast < meter.value ? "spend" : "gain",
+  };
+};
 
 /**
  * `index.css` reads the segment count from this custom property; `theme.ts` publishes its default
@@ -204,6 +292,38 @@ const meterStyleOf = (meter: Meter): MeterStyle =>
   meter.segments === null
     ? { accentColor: PALETTE.accent }
     : { accentColor: PALETTE.accent, "--mh-meter-segments": meter.segments };
+
+/**
+ * The track carries the segment count as well as the bar, because the segment mask sits on the
+ * track so that it cuts the forecast hatch by the same gaps as the bar under it.
+ */
+const trackStyleOf = (meter: Meter): MeterStyle =>
+  meter.segments === null ? {} : { "--mh-meter-segments": meter.segments };
+
+type ForecastStyle = CSSProperties & {
+  readonly "--mh-meter-forecast-from": number;
+  readonly "--mh-meter-forecast-to": number;
+};
+
+const MeterForecast = ({ meter }: { readonly meter: Meter }) => {
+  const span = forecastSpanOf(meter);
+  if (span === null) return null;
+
+  const style: ForecastStyle = {
+    "--mh-meter-forecast-from": span.from,
+    "--mh-meter-forecast-to": span.to,
+  };
+
+  return (
+    <span
+      aria-hidden="true"
+      className="mh-meter__forecast"
+      data-testid={METER_FORECAST_TEST_ID}
+      data-direction={span.direction}
+      style={style}
+    />
+  );
+};
 
 /**
  * **A native `<meter>`, kept rather than swapped, closing the standing Inbox item (PLAN M5.7).**
@@ -233,6 +353,7 @@ const MeterReadout = ({ meter }: { readonly meter: Meter }) => (
     data-min={meter.min}
     data-max={meter.max}
     data-segments={meter.segments ?? undefined}
+    data-forecast={meter.forecast ?? undefined}
   >
     <dt className="mh-meter__label">{meter.label}</dt>
     <dd className="mh-meter__reading">
@@ -240,23 +361,26 @@ const MeterReadout = ({ meter }: { readonly meter: Meter }) => (
       <span key={meter.display} className="mh-meter__value" data-testid={METER_VALUE_TEST_ID}>
         {meter.display}
       </span>
-      <meter
-        className="mh-meter__bar"
-        aria-label={meter.label}
-        min={meter.min}
-        max={meter.max}
-        value={meter.value}
-        style={meterStyleOf(meter)}
-      />
+      <span className="mh-meter__track" style={trackStyleOf(meter)}>
+        <meter
+          className="mh-meter__bar"
+          aria-label={meter.label}
+          min={meter.min}
+          max={meter.max}
+          value={meter.value}
+          style={meterStyleOf(meter)}
+        />
+        <MeterForecast meter={meter} />
+      </span>
     </dd>
   </div>
 );
 
-export const Meters = ({ view, bounds }: MetersProps) => (
+export const Meters = ({ view, bounds, remaining }: MetersProps) => (
   <section aria-label={METERS_LABEL} className="mh-card" data-testid={METERS_TEST_ID}>
     <h2 className="mh-card__title">{METERS_TITLE}</h2>
     <dl className="mh-meters">
-      {metersOf(view, bounds).map((meter) => (
+      {metersOf(view, bounds, remaining).map((meter) => (
         <MeterReadout key={meter.kind} meter={meter} />
       ))}
     </dl>

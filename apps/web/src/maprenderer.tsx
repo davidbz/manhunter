@@ -42,9 +42,20 @@
  * their own layer after the exit gates. `selectableKind` dims what an armed action cannot target;
  * it changes how a target looks, never what clicking it reports.
  *
+ * **The hover link is PLAN M7.2's.** Every node and edge carries a native `<title>` with its place
+ * name. `onFocusNode` reports which node the pointer or the keyboard is on, from a node or a
+ * report pin; the beacon that answers it is drawn by the caller, in the overlay.
+ *
  * **Recent reports are pinned (PLAN M6.6)** in `map-report-pins`, between the exit gates and the
  * incidents, so after the nodes and clear of the pinned order. Like both of those layers it takes
  * no pointer events. The belief field itself is still whatever the caller puts in the overlay.
+ *
+ * **The plan is drawn last (PLAN M7.3)**, in `map-plan` after the incidents, so above the nodes
+ * and clear of the pinned order. Like the overlay the slot takes no pointer events, and only what
+ * the caller draws there opts back in (a planned order's marker, which removes it). The renderer
+ * reports two more things and decides neither: which target the pointer or keyboard is on
+ * (`onHoverTarget`), and a right-click on the map (`onCancel`), whose browser menu is suppressed
+ * only when there is a handler to take it.
  *
  * The plate is `mapgeometry.ts`'s `plateBoundsOf` over every drawn point, and it is both the
  * `viewBox` and the rectangle the district cells tile, so the two cannot disagree by a padding.
@@ -69,7 +80,7 @@ import {
   type TimeOfDay,
   timeOfDayAt,
 } from "@manhunter/core";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { type DistrictBlock, districtBlocksOf } from "./districtblocks";
 import type { CellBounds } from "./districtcells";
 import { LIMITS } from "./limits";
@@ -86,10 +97,14 @@ import {
   ROAD_GLOW_FILTER_ID,
 } from "./mapactors";
 import { coordinate, MIDPOINT_FRACTION, plateBoundsOf, pointsOf } from "./mapgeometry";
+import type { MapHoverHandler } from "./maphover";
 import { locatedIncidentsOf } from "./mapincidents";
-import { positionIndexOf } from "./mapnodes";
+import { placeNamesFor, positionIndexOf } from "./mapnodes";
 import { type MapReportPinStyle, MapReportPins } from "./mapreportpins";
 import { edgeSelectable, type MapSelectable, nodeSelectable } from "./mapselectable";
+import { type MapStreetLabelStyle, MapStreetLabels } from "./mapstreetlabels";
+import type { NodeFocusHandler } from "./nodefocus";
+import { edgeNameOf, nodeNameOf, type PlaceNames } from "./placenames";
 import { lastHeardByNodeOf, reportPinsOf } from "./reportpins";
 import { type BridgeSpan, bridgeDecksOf, riverChannelOf } from "./riverchannel";
 import { MAP_THEME } from "./theme";
@@ -109,6 +124,7 @@ export {
   ROAD_GLOW_FILTER_ID,
 } from "./mapactors";
 export { MAP_REPORT_PIN_TEST_ID, MAP_REPORT_PINS_TEST_ID } from "./mapreportpins";
+export { MAP_STREET_LABEL_TEST_ID, MAP_STREET_LABELS_TEST_ID } from "./mapstreetlabels";
 
 /** What the player has picked on the map. PLAN M5.5 turns one of these into an action target. */
 export type MapSelection =
@@ -205,6 +221,8 @@ export type MapTheme = {
   readonly harm: MapHarmStyle;
   /** Recent reports pinned where they were observed (PLAN M6.6). */
   readonly reportPin: MapReportPinStyle;
+  /** The avenue and street names in the plate's margins (PLAN M7.1). */
+  readonly streetLabels: MapStreetLabelStyle;
   /** Gaussian blur, in SVG user units, on the road-edge glow filter (PLAN M5.7). */
   readonly glowBlur: number;
   readonly edges: Readonly<Record<EdgeKind, MapEdgeStyle>>;
@@ -231,12 +249,37 @@ export type MapRendererProps = {
    * nothing armed. Dimming is presentation only: a dimmed target reports its click as before.
    */
   readonly selectableKind?: MapSelectable | null;
+  /**
+   * What every place is called (PLAN M7.1). `MapPanel` passes the running hunt's, seeded by its
+   * case number; the default names the view's map for `UNSEEDED_PLACE_NAMES` on the shipped grid
+   * pitch, for a renderer drawn outside a hunt.
+   */
+  readonly placeNames?: PlaceNames;
+  /**
+   * The hover link (PLAN M7.2): pointing at or focusing a node, or pointing at a report pin, puts
+   * that node in focus, and leaving clears it. Presentation only; a click still goes to
+   * `onSelect`. Absent, the map links nothing.
+   */
+  readonly onFocusNode?: NodeFocusHandler | undefined;
+  /**
+   * Pointing at or focusing a node or an edge reports it, and leaving reports `null` (PLAN M7.3),
+   * so an armed tool can preview its order there. Absent, the map reports nothing.
+   */
+  readonly onHoverTarget?: MapHoverHandler | undefined;
+  /** A right-click on the map (PLAN M7.3). Absent, the browser's own menu opens as usual. */
+  readonly onCancel?: (() => void) | undefined;
+  /** Drawn last, above everything else, in a layer that takes no pointer events (PLAN M7.3). */
+  readonly plan?: ReactNode;
   readonly theme?: MapTheme;
 };
+
+/** The seed a renderer drawn outside a hunt names its places with. */
+export const UNSEEDED_PLACE_NAMES = 0;
 
 export const MAP_TEST_ID = "map";
 export const MAP_RIVER_TEST_ID = "map-river";
 export const MAP_OVERLAY_TEST_ID = "map-overlay";
+export const MAP_PLAN_TEST_ID = "map-plan";
 export const MAP_PLATE_TEST_ID = "map-plate";
 export const MAP_BLOCKS_TEST_ID = "map-blocks";
 export const MAP_BLOCK_TEST_ID = "map-block";
@@ -267,6 +310,15 @@ const POLYGON_MIN_POINTS = 3;
 
 /** Each district's hatch pattern is `<prefix><districtType>`, which is a valid XML id. */
 const BLOCK_PATTERN_PREFIX = "map-block-";
+
+const cancelWith =
+  (onCancel: (() => void) | undefined) =>
+  (event: MouseEvent<SVGSVGElement>): void => {
+    if (onCancel === undefined) return;
+
+    event.preventDefault();
+    onCancel();
+  };
 
 const widthOf = (bounds: CellBounds): number => bounds.maxX - bounds.minX;
 
@@ -596,9 +648,15 @@ export const MapRenderer = ({
   overlay,
   daylight = BALANCE.time,
   selectableKind = null,
+  placeNames,
+  onFocusNode,
+  onHoverTarget,
+  onCancel,
+  plan,
   theme = DEFAULT_MAP_THEME,
 }: MapRendererProps) => {
   const { map } = view;
+  const names = placeNames ?? placeNamesFor(map, UNSEEDED_PLACE_NAMES, BALANCE.map.nodeSpacing);
   const positions = positionIndexOf(map.nodes);
   const exits = exitIndex(map.exits);
   const placed = placedEdges(map.edges, positions);
@@ -623,11 +681,13 @@ export const MapRenderer = ({
       data-testid={MAP_TEST_ID}
       data-timeofday={timeOfDay}
       viewBox={viewBoxOf(bounds)}
+      onContextMenu={cancelWith(onCancel)}
     >
       <RoadGlowFilter blur={theme.glowBlur} />
       <MapPlate bounds={bounds} theme={theme} />
       <MapBlocks nodes={map.nodes} bounds={bounds} theme={theme} />
       <MapDaylightWash bounds={bounds} timeOfDay={timeOfDay} theme={theme} />
+      <MapStreetLabels names={names} bounds={bounds} style={theme.streetLabels} />
       <MapRiverChannel river={map.river} placed={placed} theme={theme} />
       <g data-testid={MAP_OVERLAY_TEST_ID} style={{ pointerEvents: NO_POINTER_EVENTS }}>
         {overlay}
@@ -637,17 +697,20 @@ export const MapRenderer = ({
           <MapEdgeLine
             key={each.edge.id}
             placed={each}
+            name={edgeNameOf(names, each.edge.id)}
             blocked={blockedEdgeIds.has(each.edge.id)}
             selected={each.edge.id === selectedEdgeId}
             selectable={edgeSelectable(selectableKind, each.edge)}
             theme={theme}
             onSelect={onSelect}
+            onHoverTarget={onHoverTarget}
           />
         ))}
         {map.nodes.map((node) => (
           <MapNodeMarker
             key={node.id}
             node={node}
+            name={nodeNameOf(names, node.id)}
             facts={{
               exitKind: exits.get(node.id),
               isIncident: node.id === map.incidentNodeId,
@@ -657,6 +720,8 @@ export const MapRenderer = ({
             selectable={nodesSelectable}
             theme={theme}
             onSelect={onSelect}
+            onFocusNode={onFocusNode}
+            onHoverTarget={onHoverTarget}
           />
         ))}
       </g>
@@ -667,8 +732,12 @@ export const MapRenderer = ({
         currentTurn={view.clock.turn}
         positions={positions}
         style={theme.reportPin}
+        onFocusNode={onFocusNode}
       />
       <MapIncidents incidents={incidents} positions={positions} theme={theme} />
+      <g data-testid={MAP_PLAN_TEST_ID} style={{ pointerEvents: NO_POINTER_EVENTS }}>
+        {plan}
+      </g>
     </svg>
   );
 };

@@ -2,13 +2,16 @@
  * The dispatch errors, connected (PLAN M5.5b). The same split `mappanel.tsx` makes.
  *
  * Three selectors rather than one composite, so none of them allocates: a selector returning a
- * fresh object would make the panel re-render on every store write (PLAN M5.4's note).
+ * fresh object would make the panel re-render on every store write (PLAN M5.4's note). The place
+ * names (PLAN M7.1) are a fourth, memoised per hunt in `mapnodes.ts`.
  */
 
 import type { ActionQueue } from "./actionqueue";
 import { EMPTY_QUEUE } from "./actionqueue";
 import { DispatchErrors } from "./dispatcherrors";
 import type { GameStoreState } from "./gamestore";
+import { huntPlaceNamesOf } from "./mapnodes";
+import { NO_PLACE_NAMES } from "./placenames";
 import { useGameStore } from "./storecontext";
 
 /**
@@ -23,6 +26,14 @@ export const DispatchErrorsPanel = () => {
   const refusal = useGameStore((state) => state.refusal);
   const rejections = useGameStore((state) => state.rejections);
   const dispatched = useGameStore(lastDispatch);
+  const placeNames = useGameStore(huntPlaceNamesOf) ?? NO_PLACE_NAMES;
 
-  return <DispatchErrors refusal={refusal} dispatched={dispatched} rejections={rejections} />;
+  return (
+    <DispatchErrors
+      refusal={refusal}
+      dispatched={dispatched}
+      rejections={rejections}
+      placeNames={placeNames}
+    />
+  );
 };
